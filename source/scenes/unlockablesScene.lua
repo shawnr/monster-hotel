@@ -26,13 +26,13 @@ function UnlockablesScene:draw()
     gfx.clear(gfx.kColorWhite)
 
     -- Draw header
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantBold))
+    Fonts.set(gfx.font.kVariantBold)
     gfx.drawTextAligned("UNLOCKABLES", SCREEN_WIDTH / 2, 10, kTextAlignment.center)
 
     -- Draw progress
     local unlockedCount = UnlockSystem:getUnlockedCount()
     local totalCount = UnlockSystem:getTotalCount()
-    gfx.setFont(gfx.getSystemFont())
+    Fonts.reset()
     gfx.drawTextAligned(unlockedCount .. "/" .. totalCount .. " Unlocked", SCREEN_WIDTH / 2, 28, kTextAlignment.center)
 
     -- Draw unlockables list
@@ -57,21 +57,21 @@ function UnlockablesScene:draw()
         end
 
         -- Draw item content
-        gfx.setFont(gfx.getSystemFont(gfx.font.kVariantBold))
+        Fonts.set(gfx.font.kVariantBold)
         local nameText = item.data.name
         if item.unlocked then
             nameText = nameText .. " [UNLOCKED]"
         end
         gfx.drawText(nameText, 20, y + 5)
 
-        gfx.setFont(gfx.getSystemFont())
+        Fonts.reset()
         if item.unlocked then
             -- Show effect
             local effectText = item.data.type .. " +" .. item.data.effect
             gfx.drawText(effectText, 20, y + 22)
         else
             -- Show challenge (hint)
-            gfx.setFont(gfx.getSystemFont(gfx.font.kVariantItalic))
+            Fonts.set(gfx.font.kVariantItalic)
             gfx.drawText(item.data.challenge, 20, y + 22)
         end
 
@@ -89,7 +89,7 @@ function UnlockablesScene:draw()
     end
 
     -- Draw back instruction
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantItalic))
+    Fonts.set(gfx.font.kVariantItalic)
     gfx.drawText("B: Back", 10, SCREEN_HEIGHT - 15)
 end
 

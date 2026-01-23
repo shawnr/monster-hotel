@@ -113,11 +113,11 @@ end
 
 function MenuScene:drawMainMenu()
     -- Draw title
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantBold))
+    Fonts.set(gfx.font.kVariantBold)
     gfx.drawTextAligned("MONSTER HOTEL", SCREEN_WIDTH / 2, 30, kTextAlignment.center)
 
     -- Draw menu options
-    gfx.setFont(gfx.getSystemFont())
+    Fonts.reset()
     local startY = 80
     local spacing = 40
 
@@ -144,7 +144,7 @@ function MenuScene:drawMainMenu()
     end
 
     -- Draw instructions
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantItalic))
+    Fonts.set(gfx.font.kVariantItalic)
     gfx.drawTextAligned("Up/Down to select, A to confirm", SCREEN_WIDTH / 2, 210, kTextAlignment.center)
 end
 
@@ -159,7 +159,7 @@ function MenuScene:drawSaveSlots()
     end
 
     -- Draw header with background for readability
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantBold))
+    Fonts.set(gfx.font.kVariantBold)
     local headerText = "Select Save Slot"
     local headerWidth, headerHeight = gfx.getTextSize(headerText)
     gfx.setColor(gfx.kColorWhite)
@@ -168,7 +168,7 @@ function MenuScene:drawSaveSlots()
     gfx.drawTextAligned(headerText, SCREEN_WIDTH / 2, 20, kTextAlignment.center)
 
     -- Draw save slots
-    gfx.setFont(gfx.getSystemFont())
+    Fonts.reset()
     local startY = 60
     local slotHeight = 50
 
@@ -200,7 +200,7 @@ function MenuScene:drawSaveSlots()
     end
 
     -- Draw instructions with background
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantItalic))
+    Fonts.set(gfx.font.kVariantItalic)
     local instrText = "A to select, B to go back"
     local instrWidth, instrHeight = gfx.getTextSize(instrText)
     gfx.setColor(gfx.kColorWhite)

@@ -9,12 +9,11 @@ class('Elevator').extends()
 
 -- Static sprite assets (loaded once)
 Elevator.doorSprites = nil
-Elevator.shaftSprite = nil
 
 function Elevator.loadAssets()
     if Elevator.doorSprites == nil then
-        Elevator.doorSprites = gfx.imagetable.new("images/environment/elevator-doors")
-        Elevator.shaftSprite = gfx.image.new("images/environment/ElevatorEmpty")
+        -- 4-frame animation: 1=closed, 4=open
+        Elevator.doorSprites = gfx.imagetable.new("images/hotel/elevator-doors")
     end
 end
 
@@ -39,8 +38,8 @@ function Elevator:init(hotelLevel, hotelHeight, numFloors)
 
     -- State
     self.doorsOpen = false
-    self.doorFrame = 1  -- 1 = closed, 5 = fully open
-    self.doorAnimationSpeed = 0.2
+    self.doorFrame = 1  -- 1 = closed, 4 = fully open
+    self.doorAnimationSpeed = 0.15
 
     -- Monsters inside the elevator
     self.passengers = {}
@@ -76,10 +75,10 @@ function Elevator:setNumFloors(numFloors)
 end
 
 function Elevator:update()
-    -- Animate doors (5 frames: 1=closed, 5=open)
-    local targetFrame = self.doorsOpen and 5 or 1
+    -- Animate doors (4 frames: 1=closed, 4=open)
+    local targetFrame = self.doorsOpen and 4 or 1
     if self.doorFrame < targetFrame then
-        self.doorFrame = math.min(5, self.doorFrame + self.doorAnimationSpeed)
+        self.doorFrame = math.min(4, self.doorFrame + self.doorAnimationSpeed)
     elseif self.doorFrame > targetFrame then
         self.doorFrame = math.max(1, self.doorFrame - self.doorAnimationSpeed)
     end
@@ -246,7 +245,7 @@ function Elevator:closeDoors()
 end
 
 function Elevator:areDoorsFullyOpen()
-    return self.doorFrame >= 5
+    return self.doorFrame >= 4
 end
 
 function Elevator:areDoorsFullyClosed()
@@ -284,39 +283,21 @@ function Elevator:getPassengers()
 end
 
 function Elevator:getPassengerPosition(index)
-    -- Position passengers inside the elevator
-    local spacing = 15
-    local startX = self.x + 5
-    local x = startX + ((index - 1) % 2) * spacing
-    local y = self.y + ELEVATOR_HEIGHT - 20
+    -- Position passengers inside the elevator (centered, can overlap)
+    local x = self.x + ELEVATOR_WIDTH / 2
+    local y = self.y + ELEVATOR_HEIGHT - 5  -- Feet at elevator floor
     return x, y
 end
 
 function Elevator:draw()
-    -- Draw elevator car at its position
-    -- self.x should be ELEVATOR_X (centered on screen)
-    gfx.setColor(gfx.kColorWhite)
-    gfx.fillRect(self.x, self.y, ELEVATOR_WIDTH, ELEVATOR_HEIGHT)
-    gfx.setColor(gfx.kColorBlack)
-    gfx.drawRect(self.x, self.y, ELEVATOR_WIDTH, ELEVATOR_HEIGHT)
-
-    -- Draw doors based on animation frame
-    local doorOpenAmount = (self.doorFrame - 1) / 4  -- 0 to 1
-    local doorWidth = 8
-    local gapWidth = math.floor(doorOpenAmount * (ELEVATOR_WIDTH / 2 - doorWidth))
-
-    if doorOpenAmount > 0 then
-        -- Doors sliding open - draw door panels on sides
-        local leftDoorX = self.x + gapWidth
-        local rightDoorX = self.x + ELEVATOR_WIDTH - doorWidth - gapWidth
-        gfx.fillRect(self.x, self.y + 5, leftDoorX - self.x, ELEVATOR_HEIGHT - 10)
-        gfx.fillRect(rightDoorX + doorWidth, self.y + 5, self.x + ELEVATOR_WIDTH - rightDoorX - doorWidth, ELEVATOR_HEIGHT - 10)
-    end
-
-    -- Draw center line when doors are closed or closing
-    if doorOpenAmount < 1 then
-        local centerX = self.x + ELEVATOR_WIDTH / 2
-        gfx.drawLine(centerX, self.y + 5, centerX, self.y + ELEVATOR_HEIGHT - 5)
+    -- Draw elevator doors using sprite animation
+    if Elevator.doorSprites then
+        local frameIndex = math.floor(self.doorFrame)
+        frameIndex = Utils.clamp(frameIndex, 1, 4)
+        local doorImage = Elevator.doorSprites:getImage(frameIndex)
+        if doorImage then
+            doorImage:draw(self.x, self.y)
+        end
     end
 end
 
@@ -337,7 +318,7 @@ end
 function Elevator:deserialize(data, monsters)
     self.y = data.y
     self.doorsOpen = data.doorsOpen
-    self.doorFrame = data.doorsOpen and 5 or 1
+    self.doorFrame = data.doorsOpen and 4 or 1
     self:setHotelLevel(data.hotelLevel)
     self:updateCurrentFloor()
 

@@ -7,16 +7,16 @@ local gfx <const> = playdate.graphics
 class('Floor').extends()
 
 -- Static sprite assets (loaded once)
-Floor.tileSprites = nil
-Floor.decorSprites = {}
+Floor.backgroundImages = nil
+Floor.elevatorShaft = nil
 
 function Floor.loadAssets()
-    if Floor.tileSprites == nil then
-        Floor.tileSprites = gfx.imagetable.new("images/tiles/tiles")
-        -- Load decoration sprites
-        Floor.decorSprites.fireplace = gfx.image.new("images/environment/Fireplace")
-        Floor.decorSprites.clock = gfx.image.new("images/environment/GrandfatherClock")
-        Floor.decorSprites.fourPoster = gfx.image.new("images/environment/FourPoster")
+    if Floor.backgroundImages == nil then
+        Floor.backgroundImages = {
+            gfx.image.new("images/hotel/floor-bg-1"),
+            gfx.image.new("images/hotel/floor-bg-2")
+        }
+        Floor.elevatorShaft = gfx.image.new("images/hotel/elevator-shaft")
     end
 end
 
@@ -39,7 +39,7 @@ local FLOOR_GENERATION = {
     [15] = { floors = 2, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE, ROOM_TYPE.SUITE, ROOM_TYPE.CAFE, ROOM_TYPE.CONFERENCE, ROOM_TYPE.BALLROOM } }
 }
 
-function Floor:init(floorNumber, hotelLevel, floorType)
+function Floor:init(floorNumber, hotelLevel, floorType, isNewFloor)
     Floor.super.init(self)
 
     -- Load assets if not already loaded
@@ -52,9 +52,13 @@ function Floor:init(floorNumber, hotelLevel, floorType)
     self.rooms = {}
     self.y = 0  -- Will be set by hotel
 
-    -- Random decoration positions for this floor (seeded by floor number for consistency)
-    self.decorations = {}
-    self:generateDecorations()
+    -- Fade-in animation for new floors (0 = invisible, 1 = fully visible)
+    -- New floors start invisible and fade in; existing floors start fully visible
+    self.fadeAlpha = isNewFloor and 0.0 or 1.0
+    self.isFadingIn = isNewFloor or false
+
+    -- Determine which background to use (alternates between floors)
+    self.backgroundIndex = ((floorNumber - 1) % 2) + 1
 
     -- Generate rooms based on floor type
     if self.floorType == FLOOR_TYPE.GUEST then
@@ -64,31 +68,21 @@ function Floor:init(floorNumber, hotelLevel, floorType)
     end
 end
 
-function Floor:generateDecorations()
-    -- Use floor number as seed for consistent decorations
-    local seed = self.floorNumber * 17 + 31
-
-    -- Add 1-2 decorations per floor in spaces between rooms
-    local decorTypes = {"fireplace", "clock"}
-    local numDecor = (seed % 2) + 1
-
-    for i = 1, numDecor do
-        local decorType = decorTypes[((seed + i) % #decorTypes) + 1]
-        -- Position decorations in gaps (left side near edge, right side near edge)
-        local xPos
-        if i == 1 then
-            xPos = 5  -- Left edge
-        else
-            xPos = SCREEN_WIDTH - 20  -- Right edge
-        end
-        table.insert(self.decorations, {type = decorType, x = xPos})
-    end
-end
-
 function Floor:setY(y)
     self.y = y
     -- Update room positions
     self:updateRoomPositions()
+end
+
+function Floor:update()
+    -- Animate fade-in for new floors
+    if self.isFadingIn then
+        self.fadeAlpha = self.fadeAlpha + 0.02  -- ~1.5 seconds to fully appear
+        if self.fadeAlpha >= 1.0 then
+            self.fadeAlpha = 1.0
+            self.isFadingIn = false
+        end
+    end
 end
 
 function Floor:generateGuestRooms(hotelLevel)
@@ -166,20 +160,25 @@ function Floor:updateRoomPositions()
     end
 
     -- Calculate positions for rooms symmetrically around elevator shaft
-    -- Elevator shaft is at ELEVATOR_X - 2 with width ELEVATOR_WIDTH + 4
-    local shaftLeft = ELEVATOR_X - 2
-    local shaftRight = ELEVATOR_X + ELEVATOR_WIDTH + 2
-    local roomWidth = 45
-    local roomSpacing = 5
-    local margin = 10  -- Gap between rooms and shaft
+    -- Room layout: door (38px) + number box (12px) = 50px total per room
+    local roomDoorWidth = 38
+    local roomNumberWidth = 12
+    local roomTotalWidth = roomDoorWidth + roomNumberWidth
+    local roomSpacing = 6
+
+    -- Elevator shaft center position
+    local shaftCenterX = ELEVATOR_X + ELEVATOR_WIDTH / 2
+    local shaftHalfWidth = ELEVATOR_WIDTH / 2 + 5  -- Add margin
 
     -- Left side rooms (positioned right-to-left from shaft)
-    local leftRoom2X = shaftLeft - margin - roomWidth
-    local leftRoom1X = leftRoom2X - roomSpacing - roomWidth
+    -- Room 2 is closest to elevator, Room 1 is at the edge
+    local leftRoom2X = shaftCenterX - shaftHalfWidth - roomTotalWidth
+    local leftRoom1X = leftRoom2X - roomSpacing - roomTotalWidth
 
     -- Right side rooms (positioned left-to-right from shaft)
-    local rightRoom1X = shaftRight + margin
-    local rightRoom2X = rightRoom1X + roomWidth + roomSpacing
+    -- Room 3 is closest to elevator, Room 4 is at the edge
+    local rightRoom3X = shaftCenterX + shaftHalfWidth
+    local rightRoom4X = rightRoom3X + roomTotalWidth + roomSpacing
 
     for i, room in ipairs(self.rooms) do
         local x
@@ -188,9 +187,9 @@ function Floor:updateRoomPositions()
         elseif i == 2 then
             x = leftRoom2X
         elseif i == 3 then
-            x = rightRoom1X
+            x = rightRoom3X
         else
-            x = rightRoom2X
+            x = rightRoom4X
         end
         room:setPosition(x, self.y)
     end
@@ -236,27 +235,32 @@ function Floor:isServiceFloor()
 end
 
 function Floor:draw()
-    -- Draw clean floor with simple lines (no busy tile patterns)
-    -- Floor line at bottom
-    gfx.drawLine(0, self.y + FLOOR_HEIGHT - 1, SCREEN_WIDTH, self.y + FLOOR_HEIGHT - 1)
+    -- Apply dithering for fade-in effect on new floors
+    if self.fadeAlpha < 1.0 then
+        -- Use dither pattern to simulate fade (invert for "appearing" effect)
+        gfx.setDitherPattern(1.0 - self.fadeAlpha)
+    end
 
-    -- Ceiling line at top
-    gfx.drawLine(0, self.y + 2, SCREEN_WIDTH, self.y + 2)
+    -- Draw floor background (alternating between two patterns)
+    local bg = Floor.backgroundImages[self.backgroundIndex]
+    if bg then
+        bg:draw(0, self.y)
+    end
 
-    -- Draw elevator shaft area
-    gfx.setColor(gfx.kColorWhite)
-    gfx.fillRect(ELEVATOR_X - 2, self.y, ELEVATOR_WIDTH + 4, FLOOR_HEIGHT)
-    gfx.setColor(gfx.kColorBlack)
-    gfx.drawRect(ELEVATOR_X - 2, self.y, ELEVATOR_WIDTH + 4, FLOOR_HEIGHT)
-
-    -- Draw floor number
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantBold))
-    gfx.drawText("F" .. self.floorNumber, 5, self.y + 5)
-    gfx.setFont(gfx.getSystemFont())
+    -- Draw elevator shaft in the center
+    if Floor.elevatorShaft then
+        local shaftX = ELEVATOR_X + (ELEVATOR_WIDTH - ELEVATOR_SHAFT_WIDTH) / 2
+        Floor.elevatorShaft:draw(shaftX, self.y)
+    end
 
     -- Draw rooms
     for _, room in ipairs(self.rooms) do
         room:draw()
+    end
+
+    -- Reset dither pattern
+    if self.fadeAlpha < 1.0 then
+        gfx.setDitherPattern(0)
     end
 end
 

@@ -46,7 +46,7 @@ function TitleScene:draw()
     -- Draw blinking prompt at bottom with background for readability
     if self.showPrompt then
         local promptText = "Press Any Button"
-        gfx.setFont(gfx.getSystemFont(gfx.font.kVariantBold))
+        Fonts.set(gfx.font.kVariantBold)
         local textWidth, textHeight = gfx.getTextSize(promptText)
         local textX = (SCREEN_WIDTH - textWidth) / 2
         local textY = 218

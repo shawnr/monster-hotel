@@ -7,11 +7,11 @@ local gfx <const> = playdate.graphics
 class('Room').extends()
 
 -- Static sprite assets
-Room.doorSprites = nil
+Room.doorImage = nil
 
 function Room.loadAssets()
-    if Room.doorSprites == nil then
-        Room.doorSprites = gfx.imagetable.new("images/environment/door")
+    if Room.doorImage == nil then
+        Room.doorImage = gfx.image.new("images/hotel/room-door")
     end
 end
 
@@ -48,8 +48,9 @@ end
 function Room:setPosition(x, y)
     self.x = x
     self.y = y
-    -- Door is centered in the room
-    self.doorX = x + 20
+    -- Door is on the left, room number is on the right
+    self.doorX = x
+    self.numberX = x + 40  -- Room number to the right of door (door is 38px wide)
 end
 
 function Room:getPatienceModifier()
@@ -95,30 +96,56 @@ function Room:getMonsterIcon()
 end
 
 function Room:draw()
-    -- Simple door rectangle
-    gfx.drawRect(self.x, self.y + 10, 40, 45)
-    -- Door handle
-    gfx.fillCircleAtPoint(self.x + 35, self.y + 32, 3)
-
-    -- Draw room status indicator above door
-    if self.status == BOOKING_STATUS.OCCUPIED then
-        -- Occupied - filled rectangle with X
-        gfx.fillRect(self.x + 5, self.y + 2, 30, 10)
-        gfx.setImageDrawMode(gfx.kDrawModeInverted)
-        gfx.drawText("OCC", self.x + 8, self.y + 2)
-        gfx.setImageDrawMode(gfx.kDrawModeCopy)
-    elseif self.assignedMonster then
-        -- Monster assigned - show initial in circle
-        gfx.setColor(gfx.kColorWhite)
-        gfx.fillCircleAtPoint(self.x + 20, self.y + 7, 8)
-        gfx.setColor(gfx.kColorBlack)
-        gfx.drawCircleAtPoint(self.x + 20, self.y + 7, 8)
-        local initial = string.sub(self.assignedMonster.data.name, 1, 1)
-        gfx.drawTextAligned(initial, self.x + 20, self.y + 1, kTextAlignment.center)
+    -- Draw door sprite
+    if Room.doorImage then
+        Room.doorImage:draw(self.doorX, self.y + 5)
     end
 
-    -- Room number below door
-    gfx.drawText(self.roomNumber, self.x + 5, self.y + 48)
+    -- Draw vertical room number to the right of door (smaller text)
+    local digits = tostring(self.roomNumber)
+    local digitSpacing = 10  -- Smaller spacing
+    local boxWidth = 10
+    local boxHeight = #digits * digitSpacing + 4
+
+    -- Draw box for room number
+    gfx.setColor(gfx.kColorWhite)
+    gfx.fillRect(self.numberX, self.y + 5, boxWidth, boxHeight)
+    gfx.setColor(gfx.kColorBlack)
+    gfx.drawRect(self.numberX, self.y + 5, boxWidth, boxHeight)
+
+    -- Draw each digit vertically (smaller)
+    local digitY = self.y + 7
+    for i = 1, #digits do
+        local digit = string.sub(digits, i, i)
+        -- Draw smaller by using drawText instead of the larger font
+        gfx.drawTextAligned(digit, self.numberX + boxWidth/2, digitY, kTextAlignment.center)
+        digitY = digitY + digitSpacing
+    end
+
+    -- Draw monster icon on door when room is occupied
+    if self.status == BOOKING_STATUS.OCCUPIED and self.occupant then
+        local icon = self.occupant:getIconImage()
+        if icon then
+            -- Draw icon centered on door, scaled down
+            local iconX = self.doorX + 3
+            local iconY = self.y + 30
+            icon:drawScaled(iconX, iconY, 0.7)
+        end
+    elseif self.assignedMonster then
+        -- Monster assigned but not yet checked in - show small indicator
+        local icon = self.assignedMonster:getIconImage()
+        if icon then
+            local iconX = self.doorX + 3
+            local iconY = self.y + 30
+            -- Draw smaller/faded to indicate "pending"
+            gfx.setDitherPattern(0.5)
+            icon:drawScaled(iconX, iconY, 0.5)
+            gfx.setDitherPattern(0)
+        else
+            -- Fallback: small open circle
+            gfx.drawCircleAtPoint(self.doorX + 19, self.y + 35, 4)
+        end
+    end
 end
 
 function Room:serialize()
@@ -141,21 +168,36 @@ function Room:deserialize(data, monsters)
     self.x = data.x
     self.y = data.y
 
-    -- Restore monster references
-    if data.occupantId and monsters then
-        for _, monster in ipairs(monsters) do
-            if monster.id == data.occupantId then
-                self.occupant = monster
-                break
-            end
-        end
+    -- Restore monster references if monsters array provided
+    if monsters then
+        self:linkMonsters(monsters)
     end
-    if data.assignedMonsterId and monsters then
-        for _, monster in ipairs(monsters) do
-            if monster.id == data.assignedMonsterId then
+end
+
+function Room:linkMonsters(monsters)
+    -- Find monsters whose assignedRoom matches this room
+    -- Link them based on their state
+    self.occupant = nil
+    self.assignedMonster = nil
+
+    for _, monster in ipairs(monsters) do
+        if monster.assignedRoom == self then
+            -- Monster belongs to this room
+            if monster.state == MONSTER_STATE.IN_ROOM or
+               monster.state == MONSTER_STATE.WAITING_TO_CHECKOUT or
+               monster.state == MONSTER_STATE.CHECKING_OUT or
+               monster.isCheckingOut then
+                -- Monster is in room or checking out - they're the occupant
+                self.occupant = monster
+                self.status = BOOKING_STATUS.OCCUPIED
+            elseif monster.state == MONSTER_STATE.WAITING_IN_LOBBY or
+                   monster.state == MONSTER_STATE.ENTERING_ELEVATOR or
+                   monster.state == MONSTER_STATE.RIDING_ELEVATOR or
+                   monster.state == MONSTER_STATE.EXITING_TO_ROOM then
+                -- Monster is en route to room - they're assigned
                 self.assignedMonster = monster
-                break
             end
+            break  -- Only one monster per room
         end
     end
 end

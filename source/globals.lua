@@ -15,8 +15,8 @@ BASE_ELEVATOR_SPEED = 4
 TIME_SCALE = 14.3           -- Real seconds per game hour
 GAME_TICK_RATE = 30         -- Game updates per real second (Playdate refresh rate)
 TICKS_PER_HOUR = TIME_SCALE * GAME_TICK_RATE
-DAY_START_HOUR = 5          -- 5am
-DAY_END_HOUR = 26           -- 2am next day (5 + 21 hours)
+DAY_START_HOUR = 8          -- 8am (start of morning checkout period)
+DAY_END_HOUR = 26           -- 2am next day
 MORNING_END_HOUR = 12       -- Noon - checkout time ends
 
 -- Spawning
@@ -27,12 +27,13 @@ NIGHT_START_HOUR = 21       -- 9pm
 MORNING_SPAWN_RATE = 0.1    -- 10% spawn rate in morning
 
 -- Floor dimensions
-FLOOR_HEIGHT = 60           -- Pixels per floor
+FLOOR_HEIGHT = 91           -- Pixels per floor (91px to show 2 floors at a time)
 ROOMS_PER_FLOOR = 4         -- Standard guest floor has 4 rooms
 
 -- Elevator
-ELEVATOR_WIDTH = 40
-ELEVATOR_HEIGHT = 50
+ELEVATOR_WIDTH = 61         -- Width of elevator door sprite
+ELEVATOR_HEIGHT = 91        -- Height matches floor height
+ELEVATOR_SHAFT_WIDTH = 56   -- Width of elevator shaft sprite
 ELEVATOR_X = (SCREEN_WIDTH - ELEVATOR_WIDTH) / 2  -- Centered
 
 -- Monster movement

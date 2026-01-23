@@ -157,14 +157,20 @@ function GameScene:update()
 end
 
 function GameScene:checkCanSkipToMorning()
-    -- Can only skip if time allows and all rooms are booked
+    -- Can only skip if time allows and hotel is at full occupancy
     if not TimeSystem:canSkipToMorning() then
         return false
     end
 
-    -- Check if all rooms are either occupied or have assigned monsters
-    local availableRooms = self.hotel:getAvailableRoomCount()
-    return availableRooms == 0
+    -- Only allow skip when ALL rooms are OCCUPIED (checked in)
+    -- Not just unavailable/assigned - must be actually occupied
+    local totalRooms = self.hotel:getTotalRoomCount()
+    local occupiedRooms = 0
+    for _, floor in ipairs(self.hotel.floors) do
+        occupiedRooms = occupiedRooms + floor:getOccupiedRoomCount()
+    end
+
+    return totalRooms > 0 and occupiedRooms == totalRooms
 end
 
 function GameScene:updateCamera()
@@ -198,8 +204,11 @@ function GameScene:handleElevatorInteractions()
 
     local elevatorFloorY = elevator:getFloorY()
 
-    -- Check if at lobby
-    if elevator.currentFloor == 0 then
+    -- Check if at lobby (use position check as backup to floor number)
+    local lobbyY = self.hotel.lobby.y
+    local isAtLobby = elevator.currentFloor == 0 or
+                      math.abs(elevator.y - elevator:getIdealYForFloor(0)) < 5
+    if isAtLobby then
         -- Let monsters waiting in lobby start moving to elevator
         local waitingMonsters = self.hotel.lobby:getMonstersWaitingForElevator()
         for _, monster in ipairs(waitingMonsters) do
@@ -225,21 +234,34 @@ function GameScene:handleElevatorInteractions()
             end
         end
 
-        -- Let monsters exit to lobby (checking out)
+        -- Let checkout monsters exit to lobby
+        -- Checkout monsters: isCheckingOut flag is set, OR they have an occupied room
         for i = #elevator.passengers, 1, -1 do
             local monster = elevator.passengers[i]
-            if monster.state == MONSTER_STATE.RIDING_ELEVATOR and
-               monster.assignedRoom and
-               monster.assignedRoom.status == BOOKING_STATUS.OCCUPIED then
-                -- Checking out monster - use correct lobby Y position
-                elevator:removePassenger(monster)
-                monster:exitElevatorToLobby(SCREEN_WIDTH - 30, self.hotel.lobby.y)
+            -- A monster is checking out if:
+            -- 1. They have the isCheckingOut flag set, OR
+            -- 2. They have an assigned room that's occupied (they were the occupant)
+            local isCheckout = monster.isCheckingOut or
+                              (monster.assignedRoom and monster.assignedRoom.status == BOOKING_STATUS.OCCUPIED)
+            if isCheckout then
+                -- Check out of room - use Room:checkOut() method for proper cleanup
+                if monster.assignedRoom then
+                    monster.assignedRoom:checkOut()
+                end
 
                 -- Process checkout payment
                 EconomySystem:processCheckout(monster)
 
-                -- Check out of room
-                monster.assignedRoom:checkOut()
+                -- Track the checkout
+                self.hotel:recordCheckOut()
+
+                -- Clear the checking out flag and room reference
+                monster.isCheckingOut = false
+                monster.assignedRoom = nil
+
+                -- Now remove from elevator and set exit target
+                elevator:removePassenger(monster)
+                monster:exitElevatorToLobby(SCREEN_WIDTH - 30, self.hotel.lobby.y)
             end
         end
     else
@@ -250,16 +272,19 @@ function GameScene:handleElevatorInteractions()
         -- Let monsters exit to their rooms (only check-in monsters, not checkout)
         for i = #elevator.passengers, 1, -1 do
             local monster = elevator.passengers[i]
-            -- Only exit if: on correct floor, riding elevator, AND room is ASSIGNED (not OCCUPIED)
-            -- ASSIGNED = checking in (going to room), OCCUPIED = checking out (leaving room)
+            -- Check-in monsters have: room.assignedMonster == monster, room.occupant == nil
+            -- Checkout monsters have: room.occupant == monster, room.assignedMonster == nil
             if monster.assignedRoom and
                monster.assignedRoom.floorNumber == elevator.currentFloor and
                monster.state == MONSTER_STATE.RIDING_ELEVATOR and
-               monster.assignedRoom.status == BOOKING_STATUS.ASSIGNED then
+               monster.assignedRoom.assignedMonster == monster then
                 -- Exit to room (check-in)
                 elevator:removePassenger(monster)
-                monster:setPosition(ELEVATOR_X + ELEVATOR_WIDTH / 2, currentFloor.y + FLOOR_HEIGHT - 16)
+                monster:setPosition(ELEVATOR_X + ELEVATOR_WIDTH / 2, currentFloor.y + FLOOR_HEIGHT - 5)
                 monster:exitElevatorToRoom(monster.assignedRoom.doorX, currentFloor.y)
+
+                -- Track the check-in
+                self.hotel:recordCheckIn()
             end
         end
 
@@ -289,6 +314,7 @@ function GameScene:handleMorningCheckouts()
     local currentHour = TimeSystem:getHour()
 
     -- Check each occupied room
+    local firstMonsterFound = false
     for _, floor in ipairs(self.hotel.floors) do
         for _, room in ipairs(floor.rooms) do
             if room.status == BOOKING_STATUS.OCCUPIED and room.occupant then
@@ -296,9 +322,16 @@ function GameScene:handleMorningCheckouts()
 
                 -- Check if it's time for this monster to check out
                 if monster.state == MONSTER_STATE.IN_ROOM then
-                    -- Random checkout time between 5am and noon
+                    -- Assign checkout time if not set
                     if monster.checkoutHour == 0 then
-                        monster.checkoutHour = math.random(5, 11)
+                        if not firstMonsterFound then
+                            -- First monster checks out at 8am (start of morning)
+                            monster.checkoutHour = DAY_START_HOUR
+                            firstMonsterFound = true
+                        else
+                            -- Others checkout randomly between 8am and 11am
+                            monster.checkoutHour = math.random(DAY_START_HOUR, 11)
+                        end
                     end
 
                     if currentHour >= monster.checkoutHour then
@@ -410,15 +443,27 @@ function GameScene:dismissLevelUp()
 end
 
 function GameScene:drawLevelUpNotification()
+    -- Validate levelUpInfo exists and has required fields
+    if not self.levelUpInfo or not self.levelUpInfo.newLevel then
+        -- Invalid state - dismiss the notification
+        self:dismissLevelUp()
+        return
+    end
+
     -- Draw semi-transparent overlay
     gfx.setColor(gfx.kColorWhite)
     gfx.setDitherPattern(0.5)
     gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
     gfx.setDitherPattern(0)
 
-    -- Draw notification box
+    -- Calculate box height based on content
+    local numChanges = 0
+    if (self.levelUpInfo.floorsAdded or 0) > 0 then numChanges = numChanges + 1 end
+    if self.levelUpInfo.elevatorName then numChanges = numChanges + 1 end
+    if self.levelUpInfo.lobbyCapacity then numChanges = numChanges + 1 end
+
     local boxWidth = 300
-    local boxHeight = 140
+    local boxHeight = 100 + (numChanges * 18)
     local boxX = (SCREEN_WIDTH - boxWidth) / 2
     local boxY = (SCREEN_HEIGHT - boxHeight) / 2
 
@@ -429,31 +474,38 @@ function GameScene:drawLevelUpNotification()
     gfx.drawRoundRect(boxX + 1, boxY + 1, boxWidth - 2, boxHeight - 2, 7)
 
     -- Draw title
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantBold))
+    Fonts.set(gfx.font.kVariantBold)
     gfx.drawTextAligned("LEVEL UP!", SCREEN_WIDTH / 2, boxY + 12, kTextAlignment.center)
 
     -- Draw new level
-    gfx.setFont(gfx.getSystemFont())
+    Fonts.reset()
     local levelText = "Hotel is now Level " .. self.levelUpInfo.newLevel
     gfx.drawTextAligned(levelText, SCREEN_WIDTH / 2, boxY + 38, kTextAlignment.center)
 
     -- Draw changes
     local y = boxY + 60
-    if self.levelUpInfo.floorsAdded > 0 then
-        local floorText = "+ " .. self.levelUpInfo.floorsAdded .. " new floor" .. (self.levelUpInfo.floorsAdded > 1 and "s" or "")
+    local floorsAdded = self.levelUpInfo.floorsAdded or 0
+    if floorsAdded > 0 then
+        local floorText = "+ " .. floorsAdded .. " new floor" .. (floorsAdded > 1 and "s" or "")
         gfx.drawTextAligned(floorText, SCREEN_WIDTH / 2, y, kTextAlignment.center)
         y = y + 18
     end
 
     if self.levelUpInfo.elevatorName then
-        local elevatorText = "Elevator: " .. self.levelUpInfo.elevatorName
+        local elevatorText = "New elevator: " .. self.levelUpInfo.elevatorName
         gfx.drawTextAligned(elevatorText, SCREEN_WIDTH / 2, y, kTextAlignment.center)
         y = y + 18
     end
 
+    if self.levelUpInfo.lobbyCapacity then
+        local lobbyText = "Lobby capacity: " .. self.levelUpInfo.lobbyCapacity
+        gfx.drawTextAligned(lobbyText, SCREEN_WIDTH / 2, y, kTextAlignment.center)
+        y = y + 18
+    end
+
     -- Draw continue prompt
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantItalic))
-    gfx.drawTextAligned("Press A to continue", SCREEN_WIDTH / 2, boxY + boxHeight - 22, kTextAlignment.center)
+    Fonts.set(gfx.font.kVariantItalic)
+    gfx.drawTextAligned("Press any button to continue", SCREEN_WIDTH / 2, boxY + boxHeight - 22, kTextAlignment.center)
 end
 
 function GameScene:draw()
@@ -482,7 +534,7 @@ function GameScene:draw()
 
     -- Draw skip to morning indicator if available
     if self.canSkipToMorning then
-        gfx.setFont(gfx.getSystemFont(gfx.font.kVariantBold))
+        Fonts.set(gfx.font.kVariantBold)
         local skipText = "B: Skip to Morning"
         local textWidth, textHeight = gfx.getTextSize(skipText)
         local x = SCREEN_WIDTH - textWidth - 10
@@ -494,6 +546,11 @@ function GameScene:draw()
         gfx.setColor(gfx.kColorBlack)
         gfx.drawRect(x - 4, y - 2, textWidth + 8, textHeight + 4)
         gfx.drawText(skipText, x, y)
+    end
+
+    -- Draw level-up notification on top of everything
+    if self.showingLevelUp and self.levelUpInfo then
+        self:drawLevelUpNotification()
     end
 end
 
@@ -513,11 +570,21 @@ function GameScene:downButtonDown()
 end
 
 function GameScene:AButtonDown()
+    -- Dismiss level-up notification with any button
+    if self.showingLevelUp then
+        self:dismissLevelUp()
+        return
+    end
     if self.isPaused then return end
     self.hotel.elevator:toggleDoors()
 end
 
 function GameScene:BButtonDown()
+    -- Dismiss level-up notification with any button
+    if self.showingLevelUp then
+        self:dismissLevelUp()
+        return
+    end
     if self.isPaused then return end
 
     -- If skip to morning is available, use B to skip
@@ -537,6 +604,7 @@ end
 function GameScene:startNextDay()
     -- Reset for next day
     self.hotel.dayCount = self.hotel.dayCount + 1
+    self.hotel:resetDailyStats()
     TimeSystem:reset()
     EconomySystem:startNewDay()
     SpawnSystem:start()

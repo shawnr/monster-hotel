@@ -16,32 +16,35 @@ The game will be 2D like a side-scroller, tho it will scroll up and down instead
 
 # Base Gameplay loop
 
-* The game initializes with a view of a two floor monster hotel. The elevator goes up the middle of it. On the first floor are the front desk and lobby. It is a holding area for new monsters, and it has a max limit. The player starts with a sum of $1000  
-* The game plays out on day long loops: Starting at sunrise and going into late night.  
-  * At the beginning of each loop, the cost of running the hotel is removed from the hotel’s money (this amount scales with the gameplay)  
-* New monsters come spawn according to this formula:: CHANCE\_TO\_SPAWN\_NEW\_MONSTER \= 50 \+ current time of day (hours)  
-  * If it is around noon in the game day, there would be a (50+12)% chance of a monster spawning. At 5pm the chance of a monster spawning would be (50+17)%  
+* The game initializes with a view of a two floor monster hotel. The elevator goes up the middle of it. On the first floor are the front desk and lobby. It is a holding area for new monsters, and it has a max limit. The player starts with a sum of $1000
+* The game plays out on day long loops: Day 1 starts at noon for faster action; subsequent days start at 8am and end at 2am.
+  * At the beginning of each loop, the cost of running the hotel is removed from the hotel's money (this amount scales with the gameplay)
+* New monsters come spawn according to this formula:: CHANCE\_TO\_SPAWN\_NEW\_MONSTER \= 50 \+ current time of day (hours)
+  * If it is around noon in the game day, there would be a (50+12)% chance of a monster spawning. At 5pm the chance of a monster spawning would be (50+17)%
   * After the game day equivalent of 9pm (21:00) all monster spawning will be cut in half
   * The spawn chance is rolled once every 5 seconds of real time (equivalent to ~1 game hour)
   * Each roll that succeeds spawns exactly one monster
-* Different monsters have different levels of patience, which means some need to get to their rooms faster than others.  
-* When a new monster comes in, an empty room is tagged with that monster’s icon.  
-  * Monsters ONLY spawn when there is at least one available room  
-* The player opens the door to the elevator  
-* The monsters waiting get on (up to the current elevator limit) board the elevator  
-* The player closes the door and cranks the elevator to the floor matching where the monster needs to go  
-* The player opens the door and lets the monster out  
-* The player repeats the pattern of opening/closing the door and cranking to floors where monsters need to go, picking up new monsters from the lobby as often as possible  
-* Monsters make their way to their room and disappear for a period of time, then they exit the room and move to the elevator where they wait for a ride down to the lobby  
-  * The Monster will always stay in their room until the next Day cycle  
-  * The Monster will check out at a random time between 5am and noon in the game day  
-* If a monster runs out of patience before they have gotten to their room, they will go into a rage and storm out of the hotel. This will do damage to the hotel in an amount based on the monster and level of the hotel. The damage will result in money being subtracted from the Hotel’s account.  
-* Once a monster returns to the lobby and exits the hotel, the cost of their room is added to the hotel’s sum of money  
-* As the player succeeds and moves up in the the gameplay additional floors are added to the hotel, and specialty floors such as conference and ballrooms are added  
-* There is no top end to the game; the player can keep playing and adding new floors to the hotel as long as they can satisfy the monsters  
-* At the end of each day, the Hotel Operating Costs are calculated. The formula for this is under Hotel Game System section  
-* The Hotel Operating Costs are subtracted from the amount of money in the Hotel Account (the player sees this happen on-screen and can see the results)  
-* If the hotel has no money left, the game is over  
+* Different monsters have different levels of patience, which means some need to get to their rooms faster than others.
+* When a new monster comes in, an empty room is tagged with that monster's icon.
+  * Monsters ONLY spawn when there is at least one available room
+* The player opens the door to the elevator
+* The monsters waiting get on (up to the current elevator limit) board the elevator
+* The player closes the door and cranks the elevator to the floor matching where the monster needs to go
+* The player opens the door and lets the monster out
+* The player repeats the pattern of opening/closing the door and cranking to floors where monsters need to go, picking up new monsters from the lobby as often as possible
+* Monsters make their way to their room and disappear for a period of time, then they exit the room and move to the elevator where they wait for a ride down to the lobby
+  * The Monster will always stay in their room until the next Day cycle
+  * The Monster will check out at a random time between 8am and noon in the game day
+  * The first monster to check out each day always exits at 8am sharp to ensure early morning activity
+* If a monster runs out of patience before they have gotten to their room, they will go into a rage and storm out of the hotel. This will do damage to the hotel in an amount based on the monster and level of the hotel. The damage will result in money being subtracted from the Hotel's account.
+* Once a monster returns to the lobby and exits the hotel, the cost of their room is added to the hotel's sum of money
+* As the player succeeds and moves up in the the gameplay additional floors are added to the hotel, and specialty floors such as conference and ballrooms are added
+  * When the Hotel levels up, the game pauses and shows a congratulatory notification displaying the new level and any upgrades (elevator, lobby capacity, new floors)
+  * New floors fade in at the TOP of the hotel with a visual animation
+* There is no top end to the game; the player can keep playing and adding new floors to the hotel as long as they can satisfy the monsters
+* At the end of each day, the Hotel Operating Costs are calculated. The formula for this is under Hotel Game System section
+* The Hotel Operating Costs are subtracted from the amount of money in the Hotel Account (the player sees this happen on-screen and can see the results)
+* If the hotel has no money left, the game is over
 * If the hotel still has money, the player can press any button to start the next day (that should be indicated on the screen)
 
 # Meta Gameplay Loop
@@ -126,28 +129,37 @@ Monster Hotel will make use of several core game data objects.
 1. HOTEL\_START\_LEVEL=1
 2. BASE\_MONSTER\_SPEED=4
 3. BASE\_ELEVATOR\_SPEED=4
-4. TIME\_SCALE=14.3 # Real seconds per game hour (5 real min = 21 game hours from 5am to 2am)
+4. TIME\_SCALE=14.3 # Real seconds per game hour (5 real min = 18 game hours from 8am to 2am)
 5. GAME\_TICK\_RATE=30 # Game updates per real second (matches Playdate refresh rate)
+6. DAY\_START\_HOUR=8 # 8am - start of morning checkout period
+7. DAY\_END\_HOUR=26 # 2am next day (expressed as 24+2)
+8. MORNING\_END\_HOUR=12 # Noon - checkout period ends
 
 ## Hotel
 
 The hotel manages the game loop of time and events. These are the rules and requirements:
 
-1. One day in the game equals 5 min of real time.  
-2. In the game, the day starts at 5am and ends at 2am.   
-3. At the beginning of the day, these things happen:  
-   1. Starts on a black screen that has the day count (eg “Day 1”)  
-   2. Fades in to hotel  
-4. In the first half of the day, all of the Monsters currently in rooms will exit the hotel before noon and the rate of Monster generation will only be 10% for Monsters coming in to get rooms  
-5. In the second half of the day, Monsters are all coming to stay at the normal spawn rate  
-   1. If there are no monsters in the Lobby, a monster will spawn if there are any available Rooms  
-   2. If the Lobby is at Capacity, or ALL of the rooms are occupied, then no new monsters will spawn  
-6. At the end of the day these things happen:  
-   1. The screen fades to black  
-   2. The Hotel’s Account balance is updated based on that day’s earnings  
-   3. The game offers a “press any button to continue” for the player so they don’t miss the information presented  
-   4. After pressing a button the day cycle starts again.  
-   5. If the Hotel’s Account balance is zero or a negative number at the end of a day, then the game is over
+1. One day in the game equals approximately 5 min of real time.
+2. Day 1 starts at noon to get into the action faster. Subsequent days start at 8am and end at 2am.
+3. At the beginning of the day, these things happen:
+   1. Starts on a black screen that has the day count (eg "Day 1")
+   2. Fades in to hotel
+4. Morning period (8am to noon):
+   1. All monsters currently in rooms will check out during this period
+   2. The first monster always checks out at exactly 8am to ensure early activity
+   3. Other monsters check out at random times between 8am and 11am
+   4. Monster spawn rate is reduced to 10% during morning
+5. Afternoon/Evening period (noon to 2am):
+   1. Monsters spawn at normal rate (reduced by 50% after 9pm)
+   2. If there are no monsters in the Lobby, a monster will spawn if there are any available Rooms
+   3. If the Lobby is at Capacity, or ALL of the rooms are occupied, then no new monsters will spawn
+6. At the end of the day these things happen:
+   1. The screen transitions to the Day End summary screen
+   2. The summary shows: guests checked in, guests checked out, monsters raged
+   3. Financial summary shows: room earnings, operating costs, rage damage, net change, and final balance
+   4. The game offers a "press A to continue" for the player so they don't miss the information presented
+   5. After pressing a button the day cycle starts again
+   6. If the Hotel's Account balance is zero or a negative number at the end of a day, then the game is over
 
 ## Elevator
 
@@ -191,7 +203,7 @@ Monsters are the NPCs in the game. They move on their own and mimic a schedule o
 4. The Monster will exit when the doors are open and move towards its assigned room  
 5. When the Monster arrives at the door of the room, they will enter the room.  
 6. The monster icon on the Room door will be replaced with a Hotel standard “Occupied” label  
-7. On the next day cycle, Monsters that have stayed in rooms will exit at random times between 5am and noon. When they exit their room, they will make their way to the elevator doors on their floor.   
+7. On the next day cycle, Monsters that have stayed in rooms will exit at random times between 8am and noon. The first monster always checks out at exactly 8am. When they exit their room, they will make their way to the elevator doors on their floor.   
 8. When the elevator arrives and the player opens the doors, the Monsters will enter, ride down to the Lobby, then exit the elevator and exit the hotel lobby, completing their stay  
 9. When a monster has left the Hotel the amount of money their room cost is added to the Hotel Account immediately  
 10. A Monster’s Calculated Amount of Patience is derived: Calculated Patience \= (Room.patience \+ Lobby.patience \+ Elevator.patience) x Monster.BasePatience \- Monster.timeSpent  
@@ -243,7 +255,14 @@ MoneyRequiredToLevelUp \= Level x 2000
 
 The Hotel can continue leveling infinitely until the game hits an end condition (Hotel runs out of money).
 
-When the Hotel levels up a new floor is added to top of the hotel according to the Floor Generation Chart.
+When the Hotel levels up:
+1. The game pauses and displays a Level Up notification
+2. The notification shows the new level and any upgrades:
+   - Elevator upgrade (name and new capacity) if applicable
+   - Lobby capacity increase if applicable
+   - Number of new floors being added
+3. Player presses A or B to dismiss the notification and resume gameplay
+4. New floors are added at the TOP of the hotel and fade in with a visual animation
 
 Floor Generation Table
 

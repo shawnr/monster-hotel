@@ -74,11 +74,11 @@ function RoomIndicator:drawIndicator(indicator)
     gfx.setImageDrawMode(gfx.kDrawModeCopy)
 
     -- Draw floor number
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantItalic))
+    Fonts.set(gfx.font.kVariantItalic)
     local floorText = "F" .. indicator.floorNumber
     local floorY = y + (indicator.direction == "up" and 25 or -35)
     gfx.drawTextAligned(floorText, x, floorY, kTextAlignment.center)
-    gfx.setFont(gfx.getSystemFont())
+    Fonts.reset()
 end
 
 return RoomIndicator

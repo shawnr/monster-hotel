@@ -5,11 +5,11 @@ TimeSystem = {}
 
 function TimeSystem:init(isFirstDay)
     self.tickCount = 0
-    -- Day 1 starts at noon for faster action, other days start at 5am
+    -- Day 1 starts at noon for faster action, other days start at 8am
     if isFirstDay then
         self.gameHour = 12  -- Noon
     else
-        self.gameHour = DAY_START_HOUR  -- 5am
+        self.gameHour = DAY_START_HOUR  -- 8am
     end
     self.dayEnded = false
     self.isPaused = false
@@ -21,7 +21,7 @@ end
 
 function TimeSystem:reset()
     self.tickCount = 0
-    self.gameHour = DAY_START_HOUR  -- Subsequent days start at 5am
+    self.gameHour = DAY_START_HOUR  -- Subsequent days start at 8am
     self.dayEnded = false
     self.isPaused = false
 end
@@ -63,7 +63,7 @@ function TimeSystem:getGameHour()
 end
 
 function TimeSystem:isMorning()
-    -- Morning is 5am to noon (checkout time)
+    -- Morning is 8am to noon (checkout time)
     return self.gameHour >= DAY_START_HOUR and self.gameHour < MORNING_END_HOUR
 end
 

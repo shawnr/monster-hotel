@@ -8,16 +8,13 @@ local gfx <const> = playdate.graphics
 class('Lobby').extends()
 
 -- Static sprite assets (loaded once)
-Lobby.tileSprites = nil
-Lobby.decorSprites = {}
+Lobby.backgroundImage = nil
+Lobby.elevatorShaft = nil
 
 function Lobby.loadAssets()
-    if Lobby.tileSprites == nil then
-        Lobby.tileSprites = gfx.imagetable.new("images/tiles/tiles")
-        -- Load lobby-specific decorations
-        Lobby.decorSprites.clock = gfx.image.new("images/environment/GrandfatherClock")
-        Lobby.decorSprites.fourPoster = gfx.image.new("images/environment/FourPoster")
-        Lobby.decorSprites.storageBox = gfx.image.new("images/environment/StorageBox")
+    if Lobby.backgroundImage == nil then
+        Lobby.backgroundImage = gfx.image.new("images/hotel/lobby-bg")
+        Lobby.elevatorShaft = gfx.image.new("images/hotel/elevator-shaft")
     end
 end
 
@@ -108,43 +105,26 @@ function Lobby:getMonsterCount()
 end
 
 function Lobby:getWaitPosition(index)
-    -- Spread monsters across the lobby
-    local spacing = 20
-    local baseX = self.entryX + 30
-    local x = baseX + ((index - 1) % 5) * spacing
-    local y = self.y + FLOOR_HEIGHT - 20
+    -- Spread monsters across the lobby (queue from left to right)
+    -- With 2x scale, sprites are ~64px wide, use 70px spacing
+    local spacing = 70
+    local baseX = self.entryX + 40
+    local x = baseX + (index - 1) * spacing
+    local y = self.y + FLOOR_HEIGHT - 5  -- Monster feet at floor bottom
     return x, y
 end
 
 function Lobby:draw()
-    -- Draw clean lobby with simple lines
-    -- Floor line at bottom
-    gfx.drawLine(0, self.y + FLOOR_HEIGHT - 1, SCREEN_WIDTH, self.y + FLOOR_HEIGHT - 1)
+    -- Draw lobby background (includes "Lobby" text in the image)
+    if Lobby.backgroundImage then
+        Lobby.backgroundImage:draw(0, self.y)
+    end
 
-    -- Draw lobby label
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantBold))
-    gfx.drawText("LOBBY", 5, self.y + 5)
-    gfx.setFont(gfx.getSystemFont())
-
-    -- Draw front desk (filled rectangle with inverted text)
-    gfx.fillRect(10, self.y + 25, 60, 25)
-    gfx.setImageDrawMode(gfx.kDrawModeInverted)
-    gfx.drawText("DESK", 20, self.y + 32)
-    gfx.setImageDrawMode(gfx.kDrawModeCopy)
-
-    -- Draw capacity indicator next to desk
-    local capacityText = self:getMonsterCount() .. "/" .. self.capacity
-    gfx.drawText(capacityText, 75, self.y + 32)
-
-    -- Draw elevator shaft area
-    gfx.setColor(gfx.kColorWhite)
-    gfx.fillRect(ELEVATOR_X - 2, self.y, ELEVATOR_WIDTH + 4, FLOOR_HEIGHT)
-    gfx.setColor(gfx.kColorBlack)
-    gfx.drawRect(ELEVATOR_X - 2, self.y, ELEVATOR_WIDTH + 4, FLOOR_HEIGHT)
-
-    -- Draw entry/exit door (on the right)
-    gfx.drawRect(SCREEN_WIDTH - 50, self.y + 10, 40, 45)
-    gfx.drawText("EXIT", SCREEN_WIDTH - 45, self.y + 28)
+    -- Draw elevator shaft in the center
+    if Lobby.elevatorShaft then
+        local shaftX = ELEVATOR_X + (ELEVATOR_WIDTH - ELEVATOR_SHAFT_WIDTH) / 2
+        Lobby.elevatorShaft:draw(shaftX, self.y)
+    end
 end
 
 function Lobby:serialize()

@@ -22,6 +22,10 @@ function Hotel:init()
     self.totalRages = 0
     self.lifetimeGuestsServed = 0  -- Loaded from persistent storage
 
+    -- Daily stats (reset each day)
+    self.dailyCheckIns = 0
+    self.dailyCheckOuts = 0
+
     -- Floors (index 0 = lobby, 1+ = guest floors)
     self.floors = {}
     self.lobby = nil
@@ -85,6 +89,11 @@ function Hotel:update()
     -- Update elevator
     if self.elevator then
         self.elevator:update()
+    end
+
+    -- Update floors (for fade-in animation)
+    for _, floor in ipairs(self.floors) do
+        floor:update()
     end
 
     -- Update monsters
@@ -171,20 +180,28 @@ end
 
 function Hotel:onLevelUp(oldLevel, newLevel)
     -- Track what changed for notification
+    local oldElevatorName = self.elevator.name
+    local oldLobbyCapacity = self.lobby.capacity
+
     local changes = {
         newLevel = newLevel,
         oldLevel = oldLevel,
         floorsAdded = 0,
-        elevatorName = nil,
-        lobbyName = nil
+        elevatorName = nil,  -- Only set if actually upgraded
+        lobbyCapacity = nil  -- Only set if actually increased
     }
 
     -- Upgrade elevator
     self.elevator:setHotelLevel(newLevel)
-    changes.elevatorName = self.elevator.name
+    if self.elevator.name ~= oldElevatorName then
+        changes.elevatorName = self.elevator.name
+    end
 
     -- Upgrade lobby
     self.lobby:setHotelLevel(newLevel)
+    if self.lobby.capacity > oldLobbyCapacity then
+        changes.lobbyCapacity = self.lobby.capacity
+    end
 
     -- Add new floors
     local floorsToAdd = Floor.getFloorsToSpawn(newLevel)
@@ -225,7 +242,8 @@ function Hotel:addNewFloor(hotelLevel)
         end
     end
 
-    local newFloor = Floor(floorNumber, hotelLevel, floorType)
+    -- New floor added during gameplay - mark as new for fade-in animation
+    local newFloor = Floor(floorNumber, hotelLevel, floorType, true)
     table.insert(self.floors, newFloor)
 end
 
@@ -271,6 +289,21 @@ function Hotel:getAllRooms()
     return rooms
 end
 
+-- Daily stats tracking
+function Hotel:recordCheckIn()
+    self.dailyCheckIns = self.dailyCheckIns + 1
+end
+
+function Hotel:recordCheckOut()
+    self.dailyCheckOuts = self.dailyCheckOuts + 1
+    self.guestsServed = self.guestsServed + 1
+end
+
+function Hotel:resetDailyStats()
+    self.dailyCheckIns = 0
+    self.dailyCheckOuts = 0
+end
+
 -- Monster management
 function Hotel:addMonster(monster)
     table.insert(self.monsters, monster)
@@ -289,6 +322,17 @@ function Hotel:removeMonster(monster)
 
     -- Remove from elevator if present
     self.elevator:removePassenger(monster)
+
+    -- Clear any room references to this monster (safety cleanup)
+    if monster.assignedRoom then
+        if monster.assignedRoom.occupant == monster then
+            monster.assignedRoom:checkOut()
+        end
+        if monster.assignedRoom.assignedMonster == monster then
+            monster.assignedRoom:cancelAssignment()
+        end
+        monster.assignedRoom = nil
+    end
 end
 
 function Hotel:getMonstersOnFloor(floorNumber)
@@ -368,23 +412,31 @@ function Hotel:deserialize(data)
     self.guestsServed = data.guestsServed or 0
     self.totalRages = data.totalRages or 0
 
-    -- Restore floors first (needed for room references)
+    -- Restore floors first (creates rooms without monster links)
     self.floors = {}
     for _, floorData in ipairs(data.floors) do
         local floor = Floor(floorData.floorNumber, floorData.hotelLevel, floorData.floorType)
-        floor:deserialize(floorData, nil)  -- Monsters linked later
+        floor:deserialize(floorData, nil)
         table.insert(self.floors, floor)
     end
 
     -- Get all rooms for monster deserialization
     local allRooms = self:getAllRooms()
 
-    -- Restore monsters
+    -- Restore monsters (links monster.assignedRoom to actual room objects)
     self.monsters = {}
     for _, monsterData in ipairs(data.monsters) do
         local monster = Monster.deserialize(monsterData, allRooms)
         if monster then
             table.insert(self.monsters, monster)
+        end
+    end
+
+    -- Link rooms back to monsters (room.occupant and room.assignedMonster)
+    -- Do NOT call floor:deserialize again - that recreates rooms!
+    for _, floor in ipairs(self.floors) do
+        for _, room in ipairs(floor.rooms) do
+            room:linkMonsters(self.monsters)
         end
     end
 
@@ -395,14 +447,6 @@ function Hotel:deserialize(data)
     -- Restore elevator with monster references
     self.elevator = Elevator(self.level, self:getHeight(), #self.floors)
     self.elevator:deserialize(data.elevator, self.monsters)
-
-    -- Link rooms with monsters
-    for _, floorData in ipairs(data.floors) do
-        local floor = self.floors[floorData.floorNumber]
-        if floor then
-            floor:deserialize(floorData, self.monsters)
-        end
-    end
 
     self:recalculateLayout()
 end

@@ -49,11 +49,11 @@ function GameOverScene:draw()
 
     -- Draw title
     gfx.setImageDrawMode(gfx.kDrawModeInverted)
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantBold))
+    Fonts.set(gfx.font.kVariantBold)
     gfx.drawTextAligned("GAME OVER", SCREEN_WIDTH / 2, 30, kTextAlignment.center)
 
     -- Draw hotel closed message
-    gfx.setFont(gfx.getSystemFont())
+    Fonts.reset()
     gfx.drawTextAligned("The Monster Hotel has closed its doors.", SCREEN_WIDTH / 2, 60, kTextAlignment.center)
 
     -- Draw final stats
@@ -75,7 +75,7 @@ function GameOverScene:draw()
     end
 
     -- Draw continue prompt
-    gfx.setFont(gfx.getSystemFont(gfx.font.kVariantItalic))
+    Fonts.set(gfx.font.kVariantItalic)
     gfx.drawTextAligned("Press any button to return to menu", SCREEN_WIDTH / 2, SCREEN_HEIGHT - 30, kTextAlignment.center)
 
     gfx.setImageDrawMode(gfx.kDrawModeCopy)

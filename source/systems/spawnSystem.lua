@@ -84,16 +84,17 @@ function SpawnSystem:spawnMonster()
     -- Assign room to monster
     room:assignMonster(monster)
 
-    -- Position monster at lobby entrance (lobby.y + floor height - sprite offset)
-    local lobbyFloorY = self.hotel.lobby.y + FLOOR_HEIGHT - 20
-    monster:setPosition(self.hotel.lobby.entryX, lobbyFloorY)
-
-    -- Add to hotel
+    -- Add to hotel and lobby first (so lobbyIndex is set)
     self.hotel:addMonster(monster)
     self.hotel.lobby:addMonster(monster)
 
-    -- Set target to elevator wait position
-    monster:setTarget(self.hotel.lobby.elevatorWaitX, lobbyFloorY)
+    -- Position monster at lobby entrance (monster feet at floor bottom)
+    local lobbyFloorY = self.hotel.lobby.y + FLOOR_HEIGHT - 5
+    monster:setPosition(self.hotel.lobby.entryX - 40, lobbyFloorY)
+
+    -- Set target to their queue position in lobby
+    local waitX, waitY = self.hotel.lobby:getWaitPosition(monster.lobbyIndex)
+    monster:setTarget(waitX, waitY)
 
     -- Notify
     if self.onMonsterSpawned then

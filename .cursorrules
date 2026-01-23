@@ -45,3 +45,9 @@
 [Feedback Mechanism]
 - Implement a user feedback system for improving responses.
 - Adjust behavior based on cumulative user interactions.
+
+[Coding Guidelines]
+- Always prioritize easy-to-read and easy-to-maintain over fancy or performance code
+- Where possible, store information in object attributes and avoid deriving things from the game state.
+- After you finish writing code, review it with an eye towards whether or not it actually does what you think it does. Think through every part of the logic with some examples and make sure your changes accomplish what you intend.
+- Where possible, set properties on objects via object methods. Do not directly manipulate property values.

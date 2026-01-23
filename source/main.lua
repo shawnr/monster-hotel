@@ -13,13 +13,14 @@ import "CoreLibs/animation"
 -- Import game modules
 import "globals"
 import "lib/utils"
+import "lib/fonts"
 
 -- Import scenes
 import "scenes/sceneManager"
 import "scenes/titleScene"
 import "scenes/menuScene"
 import "scenes/gameScene"
-import "scenes/pauseScene"
+-- pauseScene removed - using system menu only
 import "scenes/dayEndScene"
 import "scenes/gameOverScene"
 import "scenes/unlockablesScene"
@@ -61,6 +62,9 @@ function initialize()
     -- Seed random number generator
     math.randomseed(playdate.getSecondsSinceEpoch())
 
+    -- Load custom fonts (Newsleak Serif)
+    Fonts.load()
+
     -- Set up system menu
     setupSystemMenu()
 
@@ -83,11 +87,10 @@ function setupSystemMenu()
 
     menu:addMenuItem("Main Menu", function()
         if SceneManager.currentScene == GameScene then
-            -- Confirm before leaving
-            SceneManager:switch(PauseScene, { action = "mainMenu" })
-        else
-            SceneManager:switch(MenuScene)
+            -- Save game before returning to menu
+            GameScene:saveGame()
         end
+        SceneManager:switch(MenuScene)
     end)
 end
 

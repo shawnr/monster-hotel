@@ -10,8 +10,9 @@ class('Monster').extends()
 -- Static counter for unique IDs
 Monster.nextId = 1
 
--- Static cache for loaded sprite tables (avoid reloading for each monster)
+-- Static cache for loaded sprite tables and icons (avoid reloading for each monster)
 Monster.spriteTables = {}
+Monster.iconImages = {}
 
 function Monster:init(monsterData, assignedRoom)
     Monster.super.init(self)
@@ -49,21 +50,49 @@ function Monster:init(monsterData, assignedRoom)
     -- Checkout time (set when checking out)
     self.checkoutHour = 0
 
+    -- Explicit flag to track if this monster is checking out (vs checking in)
+    self.isCheckingOut = false
+
     -- Animation state
-    self.spriteTable = nil
     self.currentFrame = 1
     self.animationTimer = 0
+    self.animationSpeed = 8  -- Frames between animation updates
+    self.facingRight = true  -- Direction monster is facing
 
     -- Store frame dimensions for drawing
-    self.frameWidth = monsterData.frameWidth or 28
-    self.frameHeight = monsterData.frameHeight or 36
+    self.frameWidth = monsterData.frameWidth or 32
+    self.frameHeight = monsterData.frameHeight or 32
+
+    -- Load sprite table if not already cached
+    self:loadSprites()
 
     -- Visibility flag (since we don't use sprite system)
     self.visible = true
 end
 
+function Monster:loadSprites()
+    local spritePath = self.data.spriteTable
+    local iconPath = self.data.icon
+
+    -- Load sprite table if not cached
+    if spritePath and not Monster.spriteTables[spritePath] then
+        Monster.spriteTables[spritePath] = gfx.imagetable.new(spritePath)
+    end
+    self.spriteTable = Monster.spriteTables[spritePath]
+
+    -- Load icon if not cached
+    if iconPath and not Monster.iconImages[iconPath] then
+        Monster.iconImages[iconPath] = gfx.image.new(iconPath)
+    end
+    self.iconImage = Monster.iconImages[iconPath]
+end
+
 function Monster:getIcon()
     return self.data.icon
+end
+
+function Monster:getIconImage()
+    return self.iconImage
 end
 
 function Monster:update()
@@ -101,6 +130,37 @@ function Monster:update()
     if self.state ~= MONSTER_STATE.RIDING_ELEVATOR and
        self.state ~= MONSTER_STATE.IN_ROOM then
         self:moveTowardsTarget()
+    end
+
+    -- Update animation
+    self:updateAnimation()
+end
+
+function Monster:updateAnimation()
+    -- Only animate when moving or raging
+    local isMoving = (self.x ~= self.targetX or self.y ~= self.targetY)
+    local shouldAnimate = isMoving or self.state == MONSTER_STATE.RAGING
+
+    if shouldAnimate then
+        self.animationTimer = self.animationTimer + 1
+        if self.animationTimer >= self.animationSpeed then
+            self.animationTimer = 0
+            if self.spriteTable then
+                local frameCount = self.spriteTable:getLength()
+                self.currentFrame = (self.currentFrame % frameCount) + 1
+            end
+        end
+
+        -- Update facing direction based on movement
+        if self.targetX > self.x then
+            self.facingRight = true
+        elseif self.targetX < self.x then
+            self.facingRight = false
+        end
+    else
+        -- Reset to first frame when idle
+        self.currentFrame = 1
+        self.animationTimer = 0
     end
 end
 
@@ -205,7 +265,7 @@ end
 
 function Monster:exitElevatorToRoom(roomDoorX, floorY)
     self.state = MONSTER_STATE.EXITING_TO_ROOM
-    self:setTarget(roomDoorX, floorY + FLOOR_HEIGHT - 16)
+    self:setTarget(roomDoorX, floorY + FLOOR_HEIGHT - 5)
 end
 
 function Monster:enterRoom()
@@ -222,13 +282,15 @@ end
 function Monster:exitRoom(checkoutHour)
     self.state = MONSTER_STATE.WAITING_TO_CHECKOUT
     self.checkoutHour = checkoutHour
+    -- Mark as checking out (used to identify checkout vs check-in monsters in elevator)
+    self.isCheckingOut = true
     -- Reset time spent for checkout patience
     self.timeSpent = 0
     -- Show sprite
     self.visible = true
     -- Position at room door and set target to elevator waiting area
     if self.assignedRoom then
-        local floorY = self.assignedRoom.y + FLOOR_HEIGHT - 16
+        local floorY = self.assignedRoom.y + FLOOR_HEIGHT - 5
         self:setPosition(self.assignedRoom.doorX, floorY)
         -- Walk to elevator waiting area (just left of elevator)
         self:setTarget(ELEVATOR_X - 25, floorY)
@@ -247,7 +309,7 @@ end
 
 function Monster:exitElevatorToLobby(lobbyExitX, lobbyY)
     self.state = MONSTER_STATE.EXITING_HOTEL
-    self:setTarget(lobbyExitX, lobbyY + FLOOR_HEIGHT - 16)
+    self:setTarget(lobbyExitX, lobbyY + FLOOR_HEIGHT - 5)
 end
 
 function Monster:startRage()
@@ -315,23 +377,41 @@ function Monster:getDamageCost(hotelLevel)
 end
 
 function Monster:draw()
-    -- Always draw a simple visible monster shape (don't rely on sprites)
-    local w = 20
-    local h = 30
+    -- Draw at 2x scale
+    local scale = 2
+    local scaledWidth = self.frameWidth * scale
+    local scaledHeight = self.frameHeight * scale
 
-    -- Draw body (filled rectangle)
-    gfx.setColor(gfx.kColorBlack)
-    gfx.fillRect(self.x - w/2, self.y - h, w, h)
+    -- Position: x is center, y is feet position (bottom of sprite)
+    local drawX = self.x - scaledWidth / 2
+    local drawY = self.y - scaledHeight
 
-    -- Draw initial in white
-    gfx.setImageDrawMode(gfx.kDrawModeInverted)
-    local initial = string.sub(self.name, 1, 1)
-    gfx.drawTextAligned(initial, self.x, self.y - h/2 - 6, kTextAlignment.center)
-    gfx.setImageDrawMode(gfx.kDrawModeCopy)
+    -- Draw sprite if available
+    if self.spriteTable then
+        local frame = self.spriteTable:getImage(self.currentFrame)
+        if frame then
+            if self.facingRight then
+                frame:drawScaled(drawX, drawY, scale)
+            else
+                -- Flip horizontally when facing left
+                frame:drawScaled(drawX + scaledWidth, drawY, -scale, scale)
+            end
+        end
+    else
+        -- Fallback: draw simple rectangle if no sprite
+        gfx.setColor(gfx.kColorBlack)
+        gfx.fillRect(drawX, drawY, scaledWidth, scaledHeight)
+
+        -- Draw initial in white
+        gfx.setImageDrawMode(gfx.kDrawModeInverted)
+        local initial = string.sub(self.name, 1, 1)
+        gfx.drawTextAligned(initial, self.x, self.y - scaledHeight/2 - 6, kTextAlignment.center)
+        gfx.setImageDrawMode(gfx.kDrawModeCopy)
+    end
 
     -- Draw rage indicator
     if self.state == MONSTER_STATE.RAGING then
-        gfx.drawText("!!!", self.x - 8, self.y - h - 12)
+        gfx.drawText("!!!", self.x - 8, drawY - 12)
     end
 end
 
@@ -347,6 +427,7 @@ function Monster:serialize()
         timeSpent = self.timeSpent,
         lobbyIndex = self.lobbyIndex,
         checkoutHour = self.checkoutHour,
+        isCheckingOut = self.isCheckingOut,
         assignedRoomNumber = self.assignedRoom and self.assignedRoom.roomNumber or nil,
         assignedRoomFloor = self.assignedRoom and self.assignedRoom.floorNumber or nil
     }
@@ -378,6 +459,7 @@ function Monster.deserialize(data, rooms)
     monster.timeSpent = data.timeSpent
     monster.lobbyIndex = data.lobbyIndex
     monster.checkoutHour = data.checkoutHour
+    monster.isCheckingOut = data.isCheckingOut or false
 
     -- Update next ID counter
     if data.id >= Monster.nextId then
