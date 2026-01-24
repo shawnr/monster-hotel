@@ -56,8 +56,9 @@ function Monster:init(monsterData, assignedRoom)
     -- Animation state
     self.currentFrame = 1
     self.animationTimer = 0
-    self.animationSpeed = 8  -- Frames between animation updates
+    self.animationSpeed = 10  -- Frames between animation updates (slower for better walk cycle visibility)
     self.facingRight = true  -- Direction monster is facing
+    self.wasMoving = false   -- Track if we were moving last frame
 
     -- Store frame dimensions for drawing
     self.frameWidth = monsterData.frameWidth or 32
@@ -137,9 +138,14 @@ function Monster:update()
 end
 
 function Monster:updateAnimation()
-    -- Only animate when moving or raging
-    local isMoving = (self.x ~= self.targetX or self.y ~= self.targetY)
-    local shouldAnimate = isMoving or self.state == MONSTER_STATE.RAGING
+    -- Check if we should be animating based on state (not just position)
+    local isMovingState = self.state == MONSTER_STATE.ENTERING_ELEVATOR or
+                          self.state == MONSTER_STATE.EXITING_TO_ROOM or
+                          self.state == MONSTER_STATE.CHECKING_OUT or
+                          self.state == MONSTER_STATE.EXITING_HOTEL or
+                          self.state == MONSTER_STATE.RAGING
+    local isMovingToTarget = (self.x ~= self.targetX or self.y ~= self.targetY)
+    local shouldAnimate = isMovingState or isMovingToTarget
 
     if shouldAnimate then
         self.animationTimer = self.animationTimer + 1
@@ -151,7 +157,7 @@ function Monster:updateAnimation()
             end
         end
 
-        -- Update facing direction based on movement
+        -- Update facing direction based on target
         if self.targetX > self.x then
             self.facingRight = true
         elseif self.targetX < self.x then
@@ -265,7 +271,8 @@ end
 
 function Monster:exitElevatorToRoom(roomDoorX, floorY)
     self.state = MONSTER_STATE.EXITING_TO_ROOM
-    self:setTarget(roomDoorX, floorY + FLOOR_HEIGHT - 5)
+    -- Target the center of the door (door is 38px wide)
+    self:setTarget(roomDoorX + 19, floorY + FLOOR_HEIGHT - 5)
 end
 
 function Monster:enterRoom()
@@ -288,12 +295,13 @@ function Monster:exitRoom(checkoutHour)
     self.timeSpent = 0
     -- Show sprite
     self.visible = true
-    -- Position at room door and set target to elevator waiting area
+    -- Position at room door center - monster waits here until elevator arrives
     if self.assignedRoom then
         local floorY = self.assignedRoom.y + FLOOR_HEIGHT - 5
-        self:setPosition(self.assignedRoom.doorX, floorY)
-        -- Walk to elevator waiting area (just left of elevator)
-        self:setTarget(ELEVATOR_X - 25, floorY)
+        local doorCenterX = self.assignedRoom.doorX + 19  -- Center of 38px door
+        self:setPosition(doorCenterX, floorY)
+        -- Stay at door position until elevator arrives and doors open
+        self:setTarget(doorCenterX, floorY)
     end
 end
 
@@ -331,7 +339,7 @@ end
 
 -- Patience calculations
 function Monster:getCalculatedPatience(lobby, elevator, room)
-    -- Base patience + modifiers - time spent
+    -- Base patience + bonus from upgrades - time spent waiting
     local patienceBonus = 0
 
     if lobby then
@@ -350,7 +358,9 @@ function Monster:getCalculatedPatience(lobby, elevator, room)
     -- Convert time spent from ticks to seconds
     local timeSpentSeconds = self.timeSpent / GAME_TICK_RATE
 
-    return (patienceBonus * self.basePatience) - timeSpentSeconds
+    -- Additive formula: each point of bonus adds 1 second of patience
+    -- This keeps patience tight even at higher levels
+    return self.basePatience + patienceBonus - timeSpentSeconds
 end
 
 function Monster:getPatiencePercentage(lobby, elevator, room)
@@ -377,8 +387,8 @@ function Monster:getDamageCost(hotelLevel)
 end
 
 function Monster:draw()
-    -- Draw at 2x scale
-    local scale = 2
+    -- Draw at 1.75x scale (56x56 from 32x32 sprites)
+    local scale = 1.75
     local scaledWidth = self.frameWidth * scale
     local scaledHeight = self.frameHeight * scale
 

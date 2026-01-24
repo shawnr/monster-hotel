@@ -12,7 +12,7 @@ BASE_MONSTER_SPEED = 4
 BASE_ELEVATOR_SPEED = 4
 
 -- Time system
-TIME_SCALE = 14.3           -- Real seconds per game hour
+TIME_SCALE = 7.15           -- Real seconds per game hour (~2.5 min day cycle)
 GAME_TICK_RATE = 30         -- Game updates per real second (Playdate refresh rate)
 TICKS_PER_HOUR = TIME_SCALE * GAME_TICK_RATE
 DAY_START_HOUR = 8          -- 8am (start of morning checkout period)
@@ -37,8 +37,8 @@ ELEVATOR_SHAFT_WIDTH = 56   -- Width of elevator shaft sprite
 ELEVATOR_X = (SCREEN_WIDTH - ELEVATOR_WIDTH) / 2  -- Centered
 
 -- Monster movement
-MONSTER_TILE_SIZE = 16
-MONSTER_MOVE_TICKS = 2      -- Move every 2 game ticks
+MONSTER_TILE_SIZE = 8       -- Base movement speed in pixels (reduced from 16)
+MONSTER_MOVE_TICKS = 3      -- Move every 3 game ticks (slower)
 
 -- Z-Index layers for sprite ordering
 Z_BACKGROUND = 0
@@ -98,27 +98,27 @@ PATIENCE_WARN_1 = 0.50      -- Show 1 exclamation point
 PATIENCE_WARN_2 = 0.70      -- Show 2 exclamation points
 PATIENCE_WARN_3 = 0.90      -- Show 3 exclamation points
 
--- Hotel leveling thresholds
+-- Hotel leveling thresholds (from GDD)
 HOTEL_LEVEL_THRESHOLDS = {
-    [1] = 0,
-    [2] = 100,
-    [3] = 400,
-    [4] = 1000,
-    [5] = 1500,
-    [6] = 2100,
-    [7] = 2700,
-    [8] = 3600,
-    [9] = 5000,
-    [10] = 7000,
-    [11] = 10000,
-    [12] = 15000,
-    [13] = 20000,
-    [14] = 24000,
-    [15] = 30000
+    [1] = 1000,
+    [2] = 1500,
+    [3] = 2500,
+    [4] = 4000,
+    [5] = 5500,
+    [6] = 7000,
+    [7] = 10000,
+    [8] = 12000,
+    [9] = 15000,
+    [10] = 19000,
+    [11] = 25000,
+    [12] = 30000,
+    [13] = 35000,
+    [14] = 40000,
+    [15] = 50000
 }
 
--- Level 15+ formula multiplier
-LEVEL_UP_MULTIPLIER = 2000
+-- Level 15+ formula: MoneyRequiredToLevelUp = Level x 5000
+LEVEL_UP_MULTIPLIER = 5000
 
 -- Unlockable effect types
 UNLOCKABLE_TYPE = {

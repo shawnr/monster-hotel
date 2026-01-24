@@ -11,11 +11,11 @@ class('Hotel').extends()
 function Hotel:init()
     Hotel.super.init(self)
 
-    -- Core state
-    self.level = HOTEL_START_LEVEL
+    -- Core state - calculate initial level from starting money
     self.money = HOTEL_START_MONEY
-    self.dayCount = 1
     self.maxMoneyReached = HOTEL_START_MONEY
+    self.level = self:calculateLevelFromMoney(self.money)  -- Level based on starting money
+    self.dayCount = 1
 
     -- Stats for unlockables
     self.guestsServed = 0
@@ -42,9 +42,18 @@ function Hotel:initializeNewHotel()
     -- Create lobby (at bottom, highest Y value)
     self.lobby = Lobby(self.level)
 
-    -- Create first guest floor (above lobby)
-    local firstFloor = Floor(1, self.level, FLOOR_TYPE.GUEST)
-    table.insert(self.floors, firstFloor)
+    -- Create floors based on starting level
+    -- Each level from 1 to current level adds floors according to floor generation table
+    local totalFloorsNeeded = 0
+    for level = 1, self.level do
+        totalFloorsNeeded = totalFloorsNeeded + Floor.getFloorsToSpawn(level)
+    end
+
+    -- Create all needed floors (not as "new floors" so no fade-in animation)
+    for i = 1, totalFloorsNeeded do
+        local floor = Floor(i, self.level, FLOOR_TYPE.GUEST, false)
+        table.insert(self.floors, floor)
+    end
 
     -- Calculate positions
     self:recalculateLayout()
@@ -126,7 +135,14 @@ function Hotel:draw()
     for _, monster in ipairs(self.monsters) do
         -- Only draw visible monsters (hidden when inside rooms)
         if monster.visible then
-            monster:draw()
+            -- Hide monsters inside elevator when doors are closed
+            local isInElevator = monster.state == MONSTER_STATE.RIDING_ELEVATOR
+            local doorsOpen = self.elevator.doorFrame > 1.5  -- Partially open or more
+            if isInElevator and not doorsOpen then
+                -- Skip drawing - monster is hidden inside closed elevator
+            else
+                monster:draw()
+            end
         end
     end
 end
@@ -212,9 +228,9 @@ function Hotel:onLevelUp(oldLevel, newLevel)
 
     self:recalculateLayout()
 
-    -- Notify callback if set
-    if self.onLevelUp then
-        self.onLevelUp(changes)
+    -- Notify callback if set (named differently to avoid shadowing method)
+    if self.onLevelUpCallback then
+        self.onLevelUpCallback(changes)
     end
 end
 

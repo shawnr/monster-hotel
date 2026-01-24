@@ -47,7 +47,7 @@ function GameScene:enter(options)
     self.levelUpInfo = nil
 
     -- Set up hotel callback for level up
-    self.hotel.onLevelUp = function(changes)
+    self.hotel.onLevelUpCallback = function(changes)
         self:onHotelLevelUp(changes)
     end
 end
@@ -223,14 +223,15 @@ function GameScene:handleElevatorInteractions()
         for _, monster in ipairs(self.hotel.monsters) do
             if monster.state == MONSTER_STATE.ENTERING_ELEVATOR and
                monster:isAtTarget() and elevator:canAcceptPassenger() then
-                -- Monster enters elevator
-                self.hotel.lobby:removeMonster(monster)
-                elevator:addPassenger(monster)
-                monster:enterElevator()
+                -- Monster enters elevator - check if we actually get added
+                if elevator:addPassenger(monster) then
+                    self.hotel.lobby:removeMonster(monster)
+                    monster:enterElevator()
 
-                -- Position inside elevator
-                local px, py = elevator:getPassengerPosition(#elevator.passengers)
-                monster:setPosition(px, py)
+                    -- Position inside elevator
+                    local px, py = elevator:getPassengerPosition(#elevator.passengers)
+                    monster:setPosition(px, py)
+                end
             end
         end
 
@@ -289,21 +290,36 @@ function GameScene:handleElevatorInteractions()
         end
 
         -- Let checkout monsters board the elevator
+        local elevatorCenterX = ELEVATOR_X + ELEVATOR_WIDTH / 2
         for _, monster in ipairs(self.hotel.monsters) do
             local monsterFloor = monster.assignedRoom and monster.assignedRoom.floorNumber or 0
 
-            if monsterFloor == elevator.currentFloor and elevator:canAcceptPassenger() then
-                if monster.state == MONSTER_STATE.WAITING_TO_CHECKOUT then
-                    -- Start moving toward elevator
-                    monster:startCheckout(ELEVATOR_X + ELEVATOR_WIDTH / 2)
-                elseif monster.state == MONSTER_STATE.CHECKING_OUT and monster:isAtTarget() then
-                    -- Reached elevator, board it
-                    elevator:addPassenger(monster)
-                    monster:enterElevator()
+            if monsterFloor == elevator.currentFloor then
+                if monster.state == MONSTER_STATE.WAITING_TO_CHECKOUT and elevator:canAcceptPassenger() then
+                    -- Start moving toward elevator center
+                    monster:startCheckout(elevatorCenterX)
+                elseif monster.state == MONSTER_STATE.CHECKING_OUT then
+                    -- Check if monster is close to elevator (use proximity, not exact position)
+                    local distanceToElevator = math.abs(monster.x - elevatorCenterX)
+                    if distanceToElevator < 20 and elevator:canAcceptPassenger() then
+                        -- Close enough to board - check if we actually get added
+                        if elevator:addPassenger(monster) then
+                            monster:enterElevator()
 
-                    -- Position inside elevator
-                    local px, py = elevator:getPassengerPosition(#elevator.passengers)
-                    monster:setPosition(px, py)
+                            -- Position inside elevator
+                            local px, py = elevator:getPassengerPosition(#elevator.passengers)
+                            monster:setPosition(px, py)
+                        end
+                    end
+                end
+            elseif monster.state == MONSTER_STATE.CHECKING_OUT and monsterFloor ~= elevator.currentFloor then
+                -- Monster was checking out but elevator left - reset to waiting at door
+                -- This prevents monsters getting stuck mid-checkout
+                monster.state = MONSTER_STATE.WAITING_TO_CHECKOUT
+                if monster.assignedRoom then
+                    local doorCenterX = monster.assignedRoom.doorX + 19
+                    local floorY = monster.assignedRoom.y + FLOOR_HEIGHT - 5
+                    monster:setTarget(doorCenterX, floorY)
                 end
             end
         end
@@ -357,8 +373,14 @@ function GameScene:handleMonsterRages()
             )
 
             if patience <= 0 then
+                -- Monster has lost patience - START RAGE!
+                monster:startRage()
+
                 -- Process damage
                 EconomySystem:processDamage(monster)
+
+                -- Track rage for stats
+                self.hotel.totalRages = self.hotel.totalRages + 1
 
                 -- Remove from elevator if inside
                 self.hotel.elevator:removePassenger(monster)
@@ -567,6 +589,26 @@ end
 function GameScene:downButtonDown()
     if self.isPaused then return end
     -- D-pad down as elevator control alternative
+end
+
+function GameScene:leftButtonDown()
+    -- Dismiss level-up notification with any button
+    if self.showingLevelUp then
+        self:dismissLevelUp()
+        return
+    end
+    if self.isPaused then return end
+    self.hotel.elevator:toggleDoors()
+end
+
+function GameScene:rightButtonDown()
+    -- Dismiss level-up notification with any button
+    if self.showingLevelUp then
+        self:dismissLevelUp()
+        return
+    end
+    if self.isPaused then return end
+    self.hotel.elevator:toggleDoors()
 end
 
 function GameScene:AButtonDown()

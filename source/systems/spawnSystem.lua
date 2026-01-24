@@ -56,6 +56,11 @@ function SpawnSystem:trySpawn()
 end
 
 function SpawnSystem:canSpawn()
+    -- No spawning during morning checkout period (8am - noon)
+    if self.timeSystem:isMorning() then
+        return false
+    end
+
     -- Check if lobby has space
     if not self.hotel.lobby:canAcceptMonster() then
         return false

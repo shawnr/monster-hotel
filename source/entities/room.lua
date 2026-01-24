@@ -24,8 +24,8 @@ function Room:init(floorNumber, roomIndex, roomType, hotelLevel)
     self.roomType = roomType
     self.hotelLevel = hotelLevel
 
-    -- Generate room number: floor number + random 10-20
-    self.roomNumber = tostring(floorNumber) .. tostring(math.random(10, 20))
+    -- Generate room number: floor number + 0 + room index (e.g., 101, 102, 103, 104)
+    self.roomNumber = tostring(floorNumber) .. "0" .. tostring(roomIndex)
 
     -- Get room data
     local data = RoomData.getByType(roomType)
@@ -101,45 +101,50 @@ function Room:draw()
         Room.doorImage:draw(self.doorX, self.y + 5)
     end
 
-    -- Draw vertical room number to the right of door (smaller text)
+    -- Draw vertical room number to the right of door
+    -- Large panel like reference image 14
     local digits = tostring(self.roomNumber)
-    local digitSpacing = 10  -- Smaller spacing
-    local boxWidth = 10
-    local boxHeight = #digits * digitSpacing + 4
+    local boxWidth = 16
+    local digitHeight = 16  -- Full height per digit
+    local boxHeight = #digits * digitHeight + 8
+    local boxY = self.y + 8
 
-    -- Draw box for room number
+    -- Draw box for room number (white fill with black border)
     gfx.setColor(gfx.kColorWhite)
-    gfx.fillRect(self.numberX, self.y + 5, boxWidth, boxHeight)
+    gfx.fillRect(self.numberX, boxY, boxWidth, boxHeight)
     gfx.setColor(gfx.kColorBlack)
-    gfx.drawRect(self.numberX, self.y + 5, boxWidth, boxHeight)
+    gfx.drawRect(self.numberX, boxY, boxWidth, boxHeight)
 
-    -- Draw each digit vertically (smaller)
-    local digitY = self.y + 7
+    -- Draw each digit at full size, centered in box
+    local digitY = boxY + 6
     for i = 1, #digits do
         local digit = string.sub(digits, i, i)
-        -- Draw smaller by using drawText instead of the larger font
-        gfx.drawTextAligned(digit, self.numberX + boxWidth/2, digitY, kTextAlignment.center)
-        digitY = digitY + digitSpacing
+        gfx.drawTextAligned(digit, self.numberX + boxWidth / 2, digitY, kTextAlignment.center)
+        digitY = digitY + digitHeight
     end
 
     -- Draw monster icon on door when room is occupied
     if self.status == BOOKING_STATUS.OCCUPIED and self.occupant then
         local icon = self.occupant:getIconImage()
         if icon then
-            -- Draw icon centered on door, scaled down
-            local iconX = self.doorX + 3
-            local iconY = self.y + 30
-            icon:drawScaled(iconX, iconY, 0.7)
+            -- Draw 40px icon centered on door, in top half
+            -- Icons are 32x32, so scale = 40/32 = 1.25
+            local iconScale = 1.25
+            local iconSize = 32 * iconScale  -- 40px
+            local iconX = self.doorX + (38 - iconSize) / 2  -- Center on 38px door
+            local iconY = self.y + 12  -- Top half of door (door starts at y+5)
+            icon:drawScaled(iconX, iconY, iconScale)
         end
     elseif self.assignedMonster then
-        -- Monster assigned but not yet checked in - show small indicator
+        -- Monster assigned but not yet checked in - show smaller faded indicator
         local icon = self.assignedMonster:getIconImage()
         if icon then
-            local iconX = self.doorX + 3
-            local iconY = self.y + 30
-            -- Draw smaller/faded to indicate "pending"
+            local iconScale = 0.8
+            local iconSize = 32 * iconScale
+            local iconX = self.doorX + (38 - iconSize) / 2
+            local iconY = self.y + 20
             gfx.setDitherPattern(0.5)
-            icon:drawScaled(iconX, iconY, 0.5)
+            icon:drawScaled(iconX, iconY, iconScale)
             gfx.setDitherPattern(0)
         else
             -- Fallback: small open circle

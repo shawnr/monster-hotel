@@ -159,26 +159,26 @@ function Floor:updateRoomPositions()
         return
     end
 
-    -- Calculate positions for rooms symmetrically around elevator shaft
-    -- Room layout: door (38px) + number box (12px) = 50px total per room
+    -- Calculate positions for rooms toward screen edges, leaving space around elevator
+    -- Room layout: door (38px) + number box (14px) = 52px total per room
     local roomDoorWidth = 38
-    local roomNumberWidth = 12
+    local roomNumberWidth = 14
     local roomTotalWidth = roomDoorWidth + roomNumberWidth
-    local roomSpacing = 6
+    local roomSpacing = 4
 
-    -- Elevator shaft center position
-    local shaftCenterX = ELEVATOR_X + ELEVATOR_WIDTH / 2
-    local shaftHalfWidth = ELEVATOR_WIDTH / 2 + 5  -- Add margin
+    -- Position rooms from edges inward, leaving wide elevator area in center
+    -- Left edge starts at x=0, right edge at SCREEN_WIDTH=400
+    local leftEdgeMargin = 2
+    local rightEdgeMargin = 2
 
-    -- Left side rooms (positioned right-to-left from shaft)
-    -- Room 2 is closest to elevator, Room 1 is at the edge
-    local leftRoom2X = shaftCenterX - shaftHalfWidth - roomTotalWidth
-    local leftRoom1X = leftRoom2X - roomSpacing - roomTotalWidth
+    -- Left side rooms (positioned from left edge, room 1 at far left)
+    local leftRoom1X = leftEdgeMargin
+    local leftRoom2X = leftRoom1X + roomTotalWidth + roomSpacing
 
-    -- Right side rooms (positioned left-to-right from shaft)
-    -- Room 3 is closest to elevator, Room 4 is at the edge
-    local rightRoom3X = shaftCenterX + shaftHalfWidth
-    local rightRoom4X = rightRoom3X + roomTotalWidth + roomSpacing
+    -- Right side rooms (positioned from right edge, room 4 at far right)
+    -- Account for door+number width from right edge
+    local rightRoom4X = SCREEN_WIDTH - rightEdgeMargin - roomTotalWidth
+    local rightRoom3X = rightRoom4X - roomTotalWidth - roomSpacing
 
     for i, room in ipairs(self.rooms) do
         local x

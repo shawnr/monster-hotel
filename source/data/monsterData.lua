@@ -10,7 +10,7 @@ MonsterData = {
         frameWidth = 32,
         frameHeight = 32,
         speed = 2,
-        basePatience = 200,
+        basePatience = 10,  -- ~10 seconds base patience
         baseDamage = 10,
         minHotelLevel = 1
     },
@@ -23,7 +23,7 @@ MonsterData = {
         frameWidth = 32,
         frameHeight = 32,
         speed = 1,
-        basePatience = 200,
+        basePatience = 11,  -- Patient plant, ~11 seconds
         baseDamage = 20,
         minHotelLevel = 1
     },
@@ -36,7 +36,7 @@ MonsterData = {
         frameWidth = 32,
         frameHeight = 32,
         speed = 3,
-        basePatience = 150,
+        basePatience = 7,   -- Impatient spider, ~7 seconds
         baseDamage = 30,
         minHotelLevel = 5
     },
@@ -49,7 +49,7 @@ MonsterData = {
         frameWidth = 32,
         frameHeight = 32,
         speed = 1,
-        basePatience = 200,
+        basePatience = 12,  -- Patient slug, ~12 seconds
         baseDamage = 40,
         minHotelLevel = 10
     },
@@ -62,7 +62,7 @@ MonsterData = {
         frameWidth = 32,
         frameHeight = 32,
         speed = 3,
-        basePatience = 200,
+        basePatience = 8,   -- Impatient alien, ~8 seconds
         baseDamage = 60,
         minHotelLevel = 15
     }

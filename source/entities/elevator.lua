@@ -33,8 +33,8 @@ function Elevator:init(hotelLevel, hotelHeight, numFloors)
     -- Position (start at lobby - bottom of hotel)
     -- ELEVATOR_X centers the elevator on screen
     self.x = ELEVATOR_X
-    -- Lobby is at Y = numFloors * FLOOR_HEIGHT, elevator sits inside the floor
-    self.y = self.numFloors * FLOOR_HEIGHT + (FLOOR_HEIGHT - ELEVATOR_HEIGHT) / 2
+    -- Lobby is at Y = numFloors * FLOOR_HEIGHT, elevator bottom aligns with floor bottom
+    self.y = (self.numFloors + 1) * FLOOR_HEIGHT - ELEVATOR_HEIGHT
 
     -- State
     self.doorsOpen = false
@@ -84,9 +84,10 @@ function Elevator:update()
     end
 
     -- Handle snap-to-floor when elevator is stationary near a floor
+    -- Snap when elevator bottom is within 10px of floor bottom
     if self.lastCrankChange == 0 and not self.doorsOpen then
         local nearestFloorY, distance = self:getNearestFloorY()
-        if distance <= 5 and distance > 0 then
+        if distance <= 10 and distance > 0 then
             -- Start or continue snap timer
             self.snapTimer = self.snapTimer + 1
             if self.snapTimer >= 10 then  -- ~0.33 seconds at 30fps
@@ -140,10 +141,10 @@ end
 function Elevator:moveByDelta(dx, dy)
     local newY = self.y + dy
 
-    -- Clamp to hotel bounds
+    -- Clamp to hotel bounds (elevator bottom aligns with floor bottom)
     -- Top floor (floor N) is at Y=0, lobby is at Y = numFloors * FLOOR_HEIGHT
-    local minY = (FLOOR_HEIGHT - ELEVATOR_HEIGHT) / 2  -- Top floor
-    local maxY = self.numFloors * FLOOR_HEIGHT + (FLOOR_HEIGHT - ELEVATOR_HEIGHT) / 2  -- Lobby
+    local minY = FLOOR_HEIGHT - ELEVATOR_HEIGHT  -- Top floor (elevator bottom at floor bottom)
+    local maxY = (self.numFloors + 1) * FLOOR_HEIGHT - ELEVATOR_HEIGHT  -- Lobby (elevator bottom at lobby bottom)
 
     newY = Utils.clamp(newY, minY, maxY)
 
@@ -190,8 +191,10 @@ end
 function Elevator:getIdealYForFloor(floorNumber)
     -- Calculate the ideal Y position for the elevator to be aligned with a floor
     -- Floor 0 (lobby) is at the bottom, floor N is at the top
+    -- Align elevator BOTTOM with floor BOTTOM
     local floorY = (self.numFloors - floorNumber) * FLOOR_HEIGHT
-    return floorY + (FLOOR_HEIGHT - ELEVATOR_HEIGHT) / 2
+    local floorBottom = floorY + FLOOR_HEIGHT
+    return floorBottom - ELEVATOR_HEIGHT  -- Elevator bottom aligns with floor bottom
 end
 
 function Elevator:getNearestFloorY()
