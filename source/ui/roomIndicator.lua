@@ -41,6 +41,42 @@ function RoomIndicator:update(hotel, cameraY)
             end
         end
     end
+
+    -- Also find monsters waiting to checkout or checking out on off-screen floors
+    for _, monster in ipairs(hotel.monsters) do
+        if monster.state == MONSTER_STATE.WAITING_TO_CHECKOUT or
+           monster.state == MONSTER_STATE.CHECKING_OUT then
+            -- Get the floor this monster is on
+            local monsterFloor = monster.assignedRoom and monster.assignedRoom.floorNumber or 0
+            if monsterFloor > 0 then
+                local floor = hotel.floors[monsterFloor]
+                if floor then
+                    local floorY = floor.y - cameraY + FLOOR_HEIGHT / 2
+
+                    -- Check if floor is off-screen
+                    if floorY < 30 then
+                        -- Floor is above screen - indicator at elevator shaft position
+                        table.insert(self.indicators, {
+                            x = ELEVATOR_X + ELEVATOR_WIDTH / 2,
+                            y = 25,
+                            direction = "up",
+                            monster = monster,
+                            floorNumber = monsterFloor
+                        })
+                    elseif floorY > SCREEN_HEIGHT - 30 then
+                        -- Floor is below screen
+                        table.insert(self.indicators, {
+                            x = ELEVATOR_X + ELEVATOR_WIDTH / 2,
+                            y = SCREEN_HEIGHT - 25,
+                            direction = "down",
+                            monster = monster,
+                            floorNumber = monsterFloor
+                        })
+                    end
+                end
+            end
+        end
+    end
 end
 
 function RoomIndicator:draw()
@@ -53,32 +89,20 @@ function RoomIndicator:drawIndicator(indicator)
     local x = indicator.x
     local y = indicator.y
 
-    -- Draw arrow pointing to room location
+    -- Draw larger solid black bubble (no letter)
     gfx.setColor(gfx.kColorBlack)
 
     if indicator.direction == "up" then
-        -- Up arrow
-        gfx.fillTriangle(x, y - 5, x - 5, y + 5, x + 5, y + 5)
+        -- Up arrow (larger)
+        gfx.fillTriangle(x, y - 6, x - 7, y + 6, x + 7, y + 6)
+        -- Black circle below arrow (larger)
+        gfx.fillCircleAtPoint(x, y + 18, 11)
     else
-        -- Down arrow
-        gfx.fillTriangle(x, y + 5, x - 5, y - 5, x + 5, y - 5)
+        -- Down arrow (larger)
+        gfx.fillTriangle(x, y + 6, x - 7, y - 6, x + 7, y - 6)
+        -- Black circle above arrow (larger)
+        gfx.fillCircleAtPoint(x, y - 18, 11)
     end
-
-    -- Draw monster initial in circle
-    gfx.fillCircleAtPoint(x, y + (indicator.direction == "up" and 15 or -15), 8)
-
-    gfx.setImageDrawMode(gfx.kDrawModeInverted)
-    local initial = string.sub(indicator.monster.name, 1, 1)
-    local textY = y + (indicator.direction == "up" and 9 or -21)
-    gfx.drawTextAligned(initial, x, textY, kTextAlignment.center)
-    gfx.setImageDrawMode(gfx.kDrawModeCopy)
-
-    -- Draw floor number
-    Fonts.set(gfx.font.kVariantItalic)
-    local floorText = "F" .. indicator.floorNumber
-    local floorY = y + (indicator.direction == "up" and 25 or -35)
-    gfx.drawTextAligned(floorText, x, floorY, kTextAlignment.center)
-    Fonts.reset()
 end
 
 return RoomIndicator

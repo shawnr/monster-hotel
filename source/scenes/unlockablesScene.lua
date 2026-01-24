@@ -8,7 +8,25 @@ local gfx <const> = playdate.graphics
 
 UnlockablesScene = {}
 
+-- Static assets
+UnlockablesScene.backgroundPattern = nil
+
+function UnlockablesScene.loadAssets()
+    if UnlockablesScene.backgroundPattern == nil then
+        UnlockablesScene.backgroundPattern = gfx.image.new("images/ui/backgrounds/pattern-dots")
+    end
+end
+
+-- Layout constants
+local HEADER_HEIGHT = 45  -- Fixed header area
+local ITEM_START_Y = HEADER_HEIGHT + 2
+local ITEM_HEIGHT = 50  -- Taller boxes for better spacing
+local VISIBLE_ITEMS = 4
+
 function UnlockablesScene:enter()
+    -- Load assets
+    UnlockablesScene.loadAssets()
+
     self.scrollOffset = 0
     self.selectedIndex = 1
     self.unlockables = UnlockSystem:getAllUnlockables()
@@ -23,74 +41,86 @@ function UnlockablesScene:update()
 end
 
 function UnlockablesScene:draw()
-    gfx.clear(gfx.kColorWhite)
+    gfx.setImageDrawMode(gfx.kDrawModeCopy)
 
-    -- Draw header
-    Fonts.set(gfx.font.kVariantBold)
-    gfx.drawTextAligned("UNLOCKABLES", SCREEN_WIDTH / 2, 10, kTextAlignment.center)
+    -- Draw tiled background pattern
+    if UnlockablesScene.backgroundPattern then
+        for x = 0, SCREEN_WIDTH, 8 do
+            for y = 0, SCREEN_HEIGHT, 8 do
+                UnlockablesScene.backgroundPattern:draw(x, y)
+            end
+        end
+    else
+        gfx.clear(gfx.kColorWhite)
+    end
 
-    -- Draw progress
-    local unlockedCount = UnlockSystem:getUnlockedCount()
-    local totalCount = UnlockSystem:getTotalCount()
-    Fonts.reset()
-    gfx.drawTextAligned(unlockedCount .. "/" .. totalCount .. " Unlocked", SCREEN_WIDTH / 2, 28, kTextAlignment.center)
-
-    -- Draw unlockables list
-    local startY = 50
-    local itemHeight = 45
-    local visibleItems = 4
-
+    -- Draw unlockables list items (before header so header covers them)
     for i, item in ipairs(self.unlockables) do
-        local y = startY + (i - 1 - self.scrollOffset) * itemHeight
+        local y = ITEM_START_Y + (i - 1 - self.scrollOffset) * ITEM_HEIGHT
 
-        -- Skip if off-screen
-        if y < startY - itemHeight or y > SCREEN_HEIGHT then
+        -- Skip if completely above content area or below screen
+        if y < ITEM_START_Y - ITEM_HEIGHT or y > SCREEN_HEIGHT then
             goto continue
         end
 
-        -- Draw item background
+        -- Draw white item background box
+        gfx.setColor(gfx.kColorWhite)
+        gfx.fillRoundRect(10, y, SCREEN_WIDTH - 20, ITEM_HEIGHT - 5, 4)
+        gfx.setColor(gfx.kColorBlack)
+
+        -- Draw item border (thicker for selected)
         if i == self.selectedIndex then
-            gfx.fillRoundRect(10, y, SCREEN_WIDTH - 20, itemHeight - 5, 4)
-            gfx.setImageDrawMode(gfx.kDrawModeInverted)
+            gfx.drawRoundRect(10, y, SCREEN_WIDTH - 20, ITEM_HEIGHT - 5, 4)
+            gfx.drawRoundRect(11, y + 1, SCREEN_WIDTH - 22, ITEM_HEIGHT - 7, 3)
+            gfx.drawRoundRect(12, y + 2, SCREEN_WIDTH - 24, ITEM_HEIGHT - 9, 3)
         else
-            gfx.drawRoundRect(10, y, SCREEN_WIDTH - 20, itemHeight - 5, 4)
+            gfx.drawRoundRect(10, y, SCREEN_WIDTH - 20, ITEM_HEIGHT - 5, 4)
         end
 
-        -- Draw item content
+        -- Draw item content with better margins
         Fonts.set(gfx.font.kVariantBold)
         local nameText = item.data.name
         if item.unlocked then
             nameText = nameText .. " [UNLOCKED]"
         end
-        gfx.drawText(nameText, 20, y + 5)
+        gfx.drawText(nameText, 20, y + 8)
 
         Fonts.reset()
         if item.unlocked then
             -- Show effect
             local effectText = item.data.type .. " +" .. item.data.effect
-            gfx.drawText(effectText, 20, y + 22)
+            gfx.drawText(effectText, 20, y + 26)
         else
             -- Show challenge (hint)
             Fonts.set(gfx.font.kVariantItalic)
-            gfx.drawText(item.data.challenge, 20, y + 22)
+            gfx.drawText(item.data.challenge, 20, y + 26)
         end
-
-        gfx.setImageDrawMode(gfx.kDrawModeCopy)
 
         ::continue::
     end
 
-    -- Draw scroll indicators
-    if self.scrollOffset > 0 then
-        gfx.fillTriangle(SCREEN_WIDTH / 2, 45, SCREEN_WIDTH / 2 - 5, 50, SCREEN_WIDTH / 2 + 5, 50)
-    end
-    if self.scrollOffset < #self.unlockables - visibleItems then
-        gfx.fillTriangle(SCREEN_WIDTH / 2, SCREEN_HEIGHT - 10, SCREEN_WIDTH / 2 - 5, SCREEN_HEIGHT - 15, SCREEN_WIDTH / 2 + 5, SCREEN_HEIGHT - 15)
-    end
+    -- Draw fixed header area (white box that covers any scrolled content)
+    gfx.setColor(gfx.kColorWhite)
+    gfx.fillRect(0, 0, SCREEN_WIDTH, HEADER_HEIGHT)
+    gfx.setColor(gfx.kColorBlack)
 
-    -- Draw back instruction
-    Fonts.set(gfx.font.kVariantItalic)
-    gfx.drawText("B: Back", 10, SCREEN_HEIGHT - 15)
+    -- Draw header with two columns: back button on left, title/progress on right
+    -- Left column: back instruction
+    Fonts.reset()
+    gfx.drawText("< B", 12, 18)
+
+    -- Center/right: title and progress
+    Fonts.set(gfx.font.kVariantBold)
+    gfx.drawTextAligned("UNLOCKABLES", SCREEN_WIDTH / 2 + 20, 10, kTextAlignment.center)
+
+    -- Draw progress
+    local unlockedCount = UnlockSystem:getUnlockedCount()
+    local totalCount = UnlockSystem:getTotalCount()
+    Fonts.reset()
+    gfx.drawTextAligned(unlockedCount .. "/" .. totalCount .. " Unlocked", SCREEN_WIDTH / 2 + 20, 26, kTextAlignment.center)
+
+    -- Draw header bottom border
+    gfx.drawLine(0, HEADER_HEIGHT - 1, SCREEN_WIDTH, HEADER_HEIGHT - 1)
 end
 
 function UnlockablesScene:upButtonDown()
@@ -112,9 +142,8 @@ function UnlockablesScene:downButtonDown()
     end
 
     -- Adjust scroll
-    local visibleItems = 4
-    if self.selectedIndex > self.scrollOffset + visibleItems then
-        self.scrollOffset = self.selectedIndex - visibleItems
+    if self.selectedIndex > self.scrollOffset + VISIBLE_ITEMS then
+        self.scrollOffset = self.selectedIndex - VISIBLE_ITEMS
     end
 end
 

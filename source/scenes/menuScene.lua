@@ -15,21 +15,61 @@ local MENU_OPTIONS = {
     "Unlockables"
 }
 
--- Animation frame sequence from animation.txt: 1x2,2x2,3x2,...
-local HIGHLIGHT_ANIMATION = {
-    {frame=1, duration=2}, {frame=2, duration=2}, {frame=3, duration=2}, {frame=4, duration=2},
-    {frame=5, duration=2}, {frame=6, duration=2}, {frame=7, duration=2}, {frame=8, duration=2},
-    {frame=9, duration=2}, {frame=10, duration=2}, {frame=11, duration=2}, {frame=12, duration=2},
-    {frame=13, duration=1}, {frame=14, duration=1}, {frame=15, duration=1}, {frame=16, duration=1},
-    {frame=12, duration=1}, {frame=11, duration=1}, {frame=16, duration=1}
-}
-
 -- Static assets
-MenuScene.highlightImages = nil
+MenuScene.backgroundImage = nil
+MenuScene.titleImage = nil
+MenuScene.buttonNormal = nil
+MenuScene.buttonHighlight = nil
+MenuScene.menuBgNormal = nil
+MenuScene.menuBgHighlight = nil
+
+-- Layout constants
+local TITLE_Y = 15
+local MENU_START_Y = 105  -- More space after title
+local MENU_SPACING = 45
+local BUTTON_GAP = 8  -- Gap between button and menu bg
+local TEXT_LEFT_PADDING = 12  -- Padding for left-aligned text
+local INSTRUCTIONS_Y = 218
+
+-- Helper function to draw text with outline/stroke for better readability
+local function drawTextWithOutline(text, x, y, textColor, outlineColor, thick)
+    -- Draw outline by drawing text at 8 offset positions
+    if outlineColor == gfx.kColorWhite then
+        gfx.setImageDrawMode(gfx.kDrawModeFillWhite)
+    else
+        gfx.setImageDrawMode(gfx.kDrawModeFillBlack)
+    end
+
+    -- Draw outline in all 8 directions (or more for thick outline)
+    local radius = thick and 2 or 1
+    for dx = -radius, radius do
+        for dy = -radius, radius do
+            if dx ~= 0 or dy ~= 0 then
+                gfx.drawText(text, x + dx, y + dy)
+            end
+        end
+    end
+
+    -- Draw main text on top
+    if textColor == gfx.kColorWhite then
+        gfx.setImageDrawMode(gfx.kDrawModeFillWhite)
+    else
+        gfx.setImageDrawMode(gfx.kDrawModeFillBlack)
+    end
+    gfx.drawText(text, x, y)
+
+    -- Reset draw mode
+    gfx.setImageDrawMode(gfx.kDrawModeCopy)
+end
 
 function MenuScene.loadAssets()
-    if MenuScene.highlightImages == nil then
-        MenuScene.highlightImages = gfx.imagetable.new("images/ui/card-highlighted/card-highlighted")
+    if MenuScene.backgroundImage == nil then
+        MenuScene.backgroundImage = gfx.image.new("images/ui/menu/background")
+        MenuScene.titleImage = gfx.image.new("images/ui/menu/title")
+        MenuScene.buttonNormal = gfx.image.new("images/ui/menu/button-normal")
+        MenuScene.buttonHighlight = gfx.image.new("images/ui/menu/button-highlight")
+        MenuScene.menuBgNormal = gfx.image.new("images/ui/menu/menuitem-bg-normal")
+        MenuScene.menuBgHighlight = gfx.image.new("images/ui/menu/menuitem-bg-highlight")
     end
 end
 
@@ -42,10 +82,6 @@ function MenuScene:enter()
     self.saveSlotIndex = 1
     self.saveSlots = {}
 
-    -- Animation state
-    self.animFrame = 1
-    self.animTick = 0
-
     -- Check for existing saves
     self:loadSaveSlotInfo()
 
@@ -53,6 +89,9 @@ function MenuScene:enter()
     if not self:hasSaveData() then
         self.selectedIndex = 2
     end
+
+    -- Play menu music (in case returning from gameplay)
+    MusicSystem:playMenuMusic()
 end
 
 function MenuScene:exit()
@@ -87,23 +126,10 @@ function MenuScene:hasSaveData()
 end
 
 function MenuScene:update()
-    -- Update animation
-    if self.showingSaveSlots and MenuScene.highlightImages then
-        self.animTick = self.animTick + 1
-        local currentAnim = HIGHLIGHT_ANIMATION[self.animFrame]
-        if self.animTick >= currentAnim.duration then
-            self.animTick = 0
-            self.animFrame = self.animFrame + 1
-            if self.animFrame > #HIGHLIGHT_ANIMATION then
-                self.animFrame = 1
-            end
-        end
-    end
+    -- No animation needed currently
 end
 
 function MenuScene:draw()
-    gfx.clear(gfx.kColorWhite)
-
     if self.showingSaveSlots then
         self:drawSaveSlots()
     else
@@ -112,101 +138,156 @@ function MenuScene:draw()
 end
 
 function MenuScene:drawMainMenu()
-    -- Draw title
-    Fonts.set(gfx.font.kVariantBold)
-    gfx.drawTextAligned("MONSTER HOTEL", SCREEN_WIDTH / 2, 30, kTextAlignment.center)
-
-    -- Draw menu options
-    Fonts.reset()
-    local startY = 80
-    local spacing = 40
-
-    for i, option in ipairs(MENU_OPTIONS) do
-        local y = startY + (i - 1) * spacing
-        local text = option
-        local isDisabled = (i == 1 and not self:hasSaveData())
-
-        -- Disable "Continue" if no saves
-        if isDisabled then
-            text = option .. " (No saves)"
-        end
-
-        -- Draw selection indicator
-        if i == self.selectedIndex then
-            gfx.fillTriangle(
-                SCREEN_WIDTH / 2 - 80, y + 8,
-                SCREEN_WIDTH / 2 - 70, y + 4,
-                SCREEN_WIDTH / 2 - 70, y + 12
-            )
-        end
-
-        gfx.drawTextAligned(text, SCREEN_WIDTH / 2, y, kTextAlignment.center)
+    -- Draw background
+    if MenuScene.backgroundImage then
+        MenuScene.backgroundImage:draw(0, 0)
+    else
+        gfx.clear(gfx.kColorWhite)
     end
 
-    -- Draw instructions
-    Fonts.set(gfx.font.kVariantItalic)
-    gfx.drawTextAligned("Up/Down to select, A to confirm", SCREEN_WIDTH / 2, 210, kTextAlignment.center)
+    -- Draw title image centered
+    if MenuScene.titleImage then
+        local titleW, titleH = MenuScene.titleImage:getSize()
+        MenuScene.titleImage:draw((SCREEN_WIDTH - titleW) / 2, TITLE_Y)
+    end
+
+    -- Draw menu options with bold font
+    Fonts.set(gfx.font.kVariantBold)
+
+    for i, option in ipairs(MENU_OPTIONS) do
+        local y = MENU_START_Y + (i - 1) * MENU_SPACING
+        local isSelected = (i == self.selectedIndex)
+        local isDisabled = (i == 1 and not self:hasSaveData())
+
+        -- Get the appropriate assets based on selection state
+        local buttonImg = isSelected and MenuScene.buttonHighlight or MenuScene.buttonNormal
+        local menuBgImg = isSelected and MenuScene.menuBgHighlight or MenuScene.menuBgNormal
+
+        if buttonImg and menuBgImg then
+            local buttonW, buttonH = buttonImg:getSize()
+            local bgW, bgH = menuBgImg:getSize()
+
+            -- Calculate total width for centering: button + gap + bg
+            local totalWidth = buttonW + BUTTON_GAP + bgW
+            local startX = (SCREEN_WIDTH - totalWidth) / 2
+
+            -- Center the item vertically within its row
+            local rowCenterY = y
+
+            -- Draw button (vertically centered in row)
+            local buttonY = rowCenterY - buttonH / 2
+            buttonImg:draw(startX, buttonY)
+
+            -- Draw menu background (vertically centered in row)
+            local bgX = startX + buttonW + BUTTON_GAP
+            local bgY = rowCenterY - bgH / 2
+            menuBgImg:draw(bgX, bgY)
+
+            -- Draw text on the menu background (left-aligned with padding)
+            local text = option
+            local textX = bgX + TEXT_LEFT_PADDING
+            local textY = bgY + (bgH / 2) - 8  -- Adjust for font height
+
+            if isSelected then
+                -- Selected: black text on light background (no outline needed)
+                gfx.setImageDrawMode(gfx.kDrawModeFillBlack)
+                gfx.drawText(text, textX, textY)
+                gfx.setImageDrawMode(gfx.kDrawModeCopy)
+            else
+                -- Unselected: white text with black outline on dark background
+                if isDisabled then
+                    -- Dimmed appearance for disabled items
+                    gfx.setImageDrawMode(gfx.kDrawModeFillWhite)
+                    gfx.drawText(text, textX, textY)
+                    gfx.setImageDrawMode(gfx.kDrawModeCopy)
+                else
+                    drawTextWithOutline(text, textX, textY, gfx.kColorWhite, gfx.kColorBlack)
+                end
+            end
+        end
+    end
+
+    -- Draw instructions at bottom (white text with thick black outline for readability)
+    Fonts.reset()
+    Fonts.set(gfx.font.kVariantBold)
+    drawTextWithOutline("up/down to select, A to confirm",
+        SCREEN_WIDTH / 2 - gfx.getTextSize("up/down to select, A to confirm") / 2,
+        INSTRUCTIONS_Y, gfx.kColorWhite, gfx.kColorBlack, true)
 end
 
 function MenuScene:drawSaveSlots()
-    -- Draw animated background if available
-    if MenuScene.highlightImages then
-        local frameData = HIGHLIGHT_ANIMATION[self.animFrame]
-        local img = MenuScene.highlightImages:getImage(frameData.frame)
-        if img then
-            img:draw(0, 0)
-        end
+    -- Draw background
+    if MenuScene.backgroundImage then
+        MenuScene.backgroundImage:draw(0, 0)
+    else
+        gfx.clear(gfx.kColorWhite)
     end
 
-    -- Draw header with background for readability
-    Fonts.set(gfx.font.kVariantBold)
-    local headerText = "Select Save Slot"
-    local headerWidth, headerHeight = gfx.getTextSize(headerText)
-    gfx.setColor(gfx.kColorWhite)
-    gfx.fillRect((SCREEN_WIDTH - headerWidth) / 2 - 10, 15, headerWidth + 20, headerHeight + 10)
-    gfx.setColor(gfx.kColorBlack)
-    gfx.drawTextAligned(headerText, SCREEN_WIDTH / 2, 20, kTextAlignment.center)
+    -- Draw title image centered (same as main menu)
+    if MenuScene.titleImage then
+        local titleW, titleH = MenuScene.titleImage:getSize()
+        MenuScene.titleImage:draw((SCREEN_WIDTH - titleW) / 2, TITLE_Y)
+    end
 
-    -- Draw save slots
-    Fonts.reset()
-    local startY = 60
-    local slotHeight = 50
+    -- Draw save slots using the same button/bg style as main menu
+    Fonts.set(gfx.font.kVariantBold)
 
     for i = 1, 3 do
-        local y = startY + (i - 1) * slotHeight
+        local y = MENU_START_Y + (i - 1) * MENU_SPACING
         local slot = self.saveSlots[i]
+        local isSelected = (i == self.saveSlotIndex)
 
-        -- Draw slot box with white background for readability
-        gfx.setColor(gfx.kColorWhite)
-        gfx.fillRoundRect(20, y, SCREEN_WIDTH - 40, slotHeight - 5, 4)
-        gfx.setColor(gfx.kColorBlack)
+        -- Get the appropriate assets based on selection state
+        local buttonImg = isSelected and MenuScene.buttonHighlight or MenuScene.buttonNormal
+        local menuBgImg = isSelected and MenuScene.menuBgHighlight or MenuScene.menuBgNormal
 
-        if i == self.saveSlotIndex then
-            -- Draw thick border for selected slot
-            gfx.drawRoundRect(20, y, SCREEN_WIDTH - 40, slotHeight - 5, 4)
-            gfx.drawRoundRect(21, y + 1, SCREEN_WIDTH - 42, slotHeight - 7, 4)
-            gfx.drawRoundRect(22, y + 2, SCREEN_WIDTH - 44, slotHeight - 9, 4)
-        else
-            gfx.drawRoundRect(20, y, SCREEN_WIDTH - 40, slotHeight - 5, 4)
-        end
+        if buttonImg and menuBgImg then
+            local buttonW, buttonH = buttonImg:getSize()
+            local bgW, bgH = menuBgImg:getSize()
 
-        -- Draw slot info
-        if slot.exists then
-            gfx.drawText("Slot " .. i .. " - Day " .. slot.day, 30, y + 5)
-            gfx.drawText("Level " .. slot.level .. " | " .. Utils.formatMoney(slot.money), 30, y + 22)
-        else
-            gfx.drawText("Slot " .. i .. " - Empty", 30, y + 12)
+            -- Calculate total width for centering: button + gap + bg
+            local totalWidth = buttonW + BUTTON_GAP + bgW
+            local startX = (SCREEN_WIDTH - totalWidth) / 2
+
+            -- Center the item vertically within its row
+            local rowCenterY = y
+
+            -- Draw button (vertically centered in row)
+            local buttonY = rowCenterY - buttonH / 2
+            buttonImg:draw(startX, buttonY)
+
+            -- Draw menu background (vertically centered in row)
+            local bgX = startX + buttonW + BUTTON_GAP
+            local bgY = rowCenterY - bgH / 2
+            menuBgImg:draw(bgX, bgY)
+
+            -- Draw text on the menu background (left-aligned with padding)
+            local text
+            if slot.exists then
+                text = "Slot " .. i .. " - Day " .. slot.day
+            else
+                text = "Slot " .. i .. " - Empty"
+            end
+
+            local textX = bgX + TEXT_LEFT_PADDING
+            local textY = bgY + (bgH / 2) - 8  -- Adjust for font height
+
+            if isSelected then
+                -- Selected: black text with white outline for better visibility on light background
+                drawTextWithOutline(text, textX, textY, gfx.kColorBlack, gfx.kColorWhite, true)
+            else
+                -- Unselected: white text with black outline on dark background
+                drawTextWithOutline(text, textX, textY, gfx.kColorWhite, gfx.kColorBlack, true)
+            end
         end
     end
 
-    -- Draw instructions with background
-    Fonts.set(gfx.font.kVariantItalic)
-    local instrText = "A to select, B to go back"
-    local instrWidth, instrHeight = gfx.getTextSize(instrText)
-    gfx.setColor(gfx.kColorWhite)
-    gfx.fillRect((SCREEN_WIDTH - instrWidth) / 2 - 6, 212, instrWidth + 12, instrHeight + 6)
-    gfx.setColor(gfx.kColorBlack)
-    gfx.drawTextAligned(instrText, SCREEN_WIDTH / 2, 215, kTextAlignment.center)
+    -- Draw instructions at bottom (white text with thick black outline for readability)
+    Fonts.reset()
+    Fonts.set(gfx.font.kVariantBold)
+    drawTextWithOutline("A to select, B to go back",
+        SCREEN_WIDTH / 2 - gfx.getTextSize("A to select, B to go back") / 2,
+        INSTRUCTIONS_Y, gfx.kColorWhite, gfx.kColorBlack, true)
 end
 
 function MenuScene:upButtonDown()

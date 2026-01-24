@@ -20,6 +20,9 @@ function TitleScene:enter()
     self.blinkTimer = 0
     self.showPrompt = true
     self.blinkInterval = 30  -- Blink every 30 frames (1 second at 30fps)
+
+    -- Play menu music
+    MusicSystem:playMenuMusic()
 end
 
 function TitleScene:exit()

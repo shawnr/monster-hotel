@@ -9,6 +9,7 @@ import "CoreLibs/sprites"
 import "CoreLibs/timer"
 import "CoreLibs/crank"
 import "CoreLibs/animation"
+import "CoreLibs/ui"
 
 -- Import game modules
 import "globals"
@@ -39,6 +40,7 @@ import "systems/spawnSystem"
 import "systems/economySystem"
 import "systems/saveSystem"
 import "systems/unlockSystem"
+import "systems/musicSystem"
 
 -- Import UI
 import "ui/hud"
@@ -70,6 +72,9 @@ function initialize()
 
     -- Load unlockables (persistent across games)
     UnlockSystem:loadUnlockables()
+
+    -- Initialize music system
+    MusicSystem:init()
 
     -- Start with title scene
     SceneManager:switch(TitleScene)

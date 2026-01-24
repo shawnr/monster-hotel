@@ -98,7 +98,10 @@ end
 
 function Monster:update()
     -- Increment time spent (patience drain)
-    if self.state ~= MONSTER_STATE.IN_ROOM and
+    -- Only count time when monster is visible and actively waiting/moving
+    -- Don't count time when: in room, invisible (waiting inside room), or exiting
+    if self.visible and
+       self.state ~= MONSTER_STATE.IN_ROOM and
        self.state ~= MONSTER_STATE.EXITING_HOTEL then
         self.timeSpent = self.timeSpent + 1
     end
@@ -293,16 +296,24 @@ function Monster:exitRoom(checkoutHour)
     self.isCheckingOut = true
     -- Reset time spent for checkout patience
     self.timeSpent = 0
-    -- Show sprite
+    -- Exit room and become visible - walk to elevator shaft to wait
     self.visible = true
-    -- Position at room door center - monster waits here until elevator arrives
+    -- Start at room door position
     if self.assignedRoom then
         local floorY = self.assignedRoom.y + FLOOR_HEIGHT - 5
         local doorCenterX = self.assignedRoom.doorX + 19  -- Center of 38px door
         self:setPosition(doorCenterX, floorY)
-        -- Stay at door position until elevator arrives and doors open
-        self:setTarget(doorCenterX, floorY)
+        -- Target: just to the right of elevator doors (wait position)
+        local elevatorWaitX = ELEVATOR_X + ELEVATOR_WIDTH + 10
+        self:setTarget(elevatorWaitX, floorY)
     end
+end
+
+function Monster:startBoardingElevator(elevatorCenterX)
+    -- Called when elevator arrives with doors open and monster is waiting at shaft
+    -- Start walking into the elevator
+    self.state = MONSTER_STATE.CHECKING_OUT
+    self:setTarget(elevatorCenterX, self.y)
 end
 
 function Monster:startCheckout(elevatorX)
@@ -335,6 +346,11 @@ end
 function Monster:exitHotel()
     self.state = MONSTER_STATE.EXITING_HOTEL
     self:setTarget(SCREEN_WIDTH + 20, self.y)
+end
+
+-- Reset patience (called at start of new day)
+function Monster:resetPatience()
+    self.timeSpent = 0
 end
 
 -- Patience calculations
@@ -438,6 +454,7 @@ function Monster:serialize()
         lobbyIndex = self.lobbyIndex,
         checkoutHour = self.checkoutHour,
         isCheckingOut = self.isCheckingOut,
+        visible = self.visible,
         assignedRoomNumber = self.assignedRoom and self.assignedRoom.roomNumber or nil,
         assignedRoomFloor = self.assignedRoom and self.assignedRoom.floorNumber or nil
     }
@@ -470,6 +487,15 @@ function Monster.deserialize(data, rooms)
     monster.lobbyIndex = data.lobbyIndex
     monster.checkoutHour = data.checkoutHour
     monster.isCheckingOut = data.isCheckingOut or false
+
+    -- Restore visibility from save data, or set based on state for backward compatibility
+    if data.visible ~= nil then
+        monster.visible = data.visible
+    else
+        -- Set visibility based on state (for old saves without visible flag)
+        monster.visible = not (data.state == MONSTER_STATE.IN_ROOM or
+                               data.state == MONSTER_STATE.WAITING_TO_CHECKOUT)
+    end
 
     -- Update next ID counter
     if data.id >= Monster.nextId then

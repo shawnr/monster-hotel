@@ -26,12 +26,15 @@ function PatienceIndicator:draw(monster, lobby, elevator, cameraY)
     local warningLevel = monster:getPatienceWarningLevel(lobby, elevator, monster.assignedRoom)
     if warningLevel == 0 then return end
 
-    -- Calculate position above monster
+    -- Calculate position above monster (in world coordinates)
+    -- Note: gfx.setDrawOffset already handles camera, so we use world coordinates directly
     local x = monster.x
-    local y = monster.y - cameraY - 24 - self.animOffset
+    -- Monster Y is feet position, subtract sprite height (~56px scaled) plus padding
+    local y = monster.y - 56 - 16 - self.animOffset
 
-    -- Don't draw if off-screen
-    if y < 0 or y > SCREEN_HEIGHT then return end
+    -- Don't draw if off-screen (check in screen space)
+    local screenY = y - cameraY
+    if screenY < -20 or screenY > SCREEN_HEIGHT + 20 then return end
 
     -- Draw exclamation points based on warning level
     local text = string.rep("!", warningLevel)

@@ -219,9 +219,21 @@ function Hotel:onLevelUp(oldLevel, newLevel)
         changes.lobbyCapacity = self.lobby.capacity
     end
 
-    -- Add new floors
+    -- Add new floors (they're added at the TOP, so everything shifts DOWN)
     local floorsToAdd = Floor.getFloorsToSpawn(newLevel)
     changes.floorsAdded = floorsToAdd
+
+    -- Shift elevator down by the amount the floors will shift
+    -- This keeps the elevator at the same relative position
+    local shiftAmount = floorsToAdd * FLOOR_HEIGHT
+    self.elevator.y = self.elevator.y + shiftAmount
+
+    -- Also shift any passengers in the elevator
+    for _, monster in ipairs(self.elevator.passengers) do
+        monster.y = monster.y + shiftAmount
+        monster.targetY = monster.targetY + shiftAmount
+    end
+
     for i = 1, floorsToAdd do
         self:addNewFloor(newLevel)
     end

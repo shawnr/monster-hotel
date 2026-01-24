@@ -8,6 +8,7 @@ class('Floor').extends()
 
 -- Static sprite assets (loaded once)
 Floor.backgroundImages = nil
+Floor.specialtyBackgrounds = nil
 Floor.elevatorShaft = nil
 
 function Floor.loadAssets()
@@ -15,6 +16,11 @@ function Floor.loadAssets()
         Floor.backgroundImages = {
             gfx.image.new("images/hotel/floor-bg-1"),
             gfx.image.new("images/hotel/floor-bg-2")
+        }
+        Floor.specialtyBackgrounds = {
+            [FLOOR_TYPE.CAFE] = gfx.image.new("images/hotel/cafe-bg"),
+            [FLOOR_TYPE.CONFERENCE] = gfx.image.new("images/hotel/conference-bg"),
+            [FLOOR_TYPE.BALLROOM] = gfx.image.new("images/hotel/ballroom-bg")
         }
         Floor.elevatorShaft = gfx.image.new("images/hotel/elevator-shaft")
     end
@@ -241,8 +247,15 @@ function Floor:draw()
         gfx.setDitherPattern(1.0 - self.fadeAlpha)
     end
 
-    -- Draw floor background (alternating between two patterns)
-    local bg = Floor.backgroundImages[self.backgroundIndex]
+    -- Draw floor background
+    local bg
+    if self:isServiceFloor() and Floor.specialtyBackgrounds[self.floorType] then
+        -- Use specialty background for service floors
+        bg = Floor.specialtyBackgrounds[self.floorType]
+    else
+        -- Use alternating background for guest floors
+        bg = Floor.backgroundImages[self.backgroundIndex]
+    end
     if bg then
         bg:draw(0, self.y)
     end
@@ -257,6 +270,11 @@ function Floor:draw()
     for _, room in ipairs(self.rooms) do
         room:draw()
     end
+
+    -- Draw thick floor divider line at the bottom of the floor
+    gfx.setColor(gfx.kColorBlack)
+    local lineY = self.y + FLOOR_HEIGHT - 1
+    gfx.fillRect(0, lineY - 2, SCREEN_WIDTH, 3)  -- 3px thick line
 
     -- Reset dither pattern
     if self.fadeAlpha < 1.0 then

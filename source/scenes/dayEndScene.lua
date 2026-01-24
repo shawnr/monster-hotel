@@ -7,8 +7,20 @@ local gfx <const> = playdate.graphics
 
 DayEndScene = {}
 
+-- Static assets
+DayEndScene.backgroundPattern = nil
+
+function DayEndScene.loadAssets()
+    if DayEndScene.backgroundPattern == nil then
+        DayEndScene.backgroundPattern = gfx.image.new("images/ui/backgrounds/pattern-chevron")
+    end
+end
+
 function DayEndScene:enter(options)
     options = options or {}
+
+    -- Load assets
+    DayEndScene.loadAssets()
 
     self.hotel = options.hotel
     self.summary = options.summary or {}
@@ -40,14 +52,20 @@ function DayEndScene:update()
 end
 
 function DayEndScene:draw()
-    -- Force white background
-    gfx.clear(gfx.kColorWhite)
     gfx.setDrawOffset(0, 0)
     gfx.setImageDrawMode(gfx.kDrawModeCopy)
     gfx.setColor(gfx.kColorBlack)
 
-    -- Always draw something visible
-    gfx.drawRect(10, 10, SCREEN_WIDTH - 20, SCREEN_HEIGHT - 20)
+    -- Draw tiled background pattern
+    if DayEndScene.backgroundPattern then
+        for x = 0, SCREEN_WIDTH, 8 do
+            for y = 0, SCREEN_HEIGHT, 8 do
+                DayEndScene.backgroundPattern:draw(x, y)
+            end
+        end
+    else
+        gfx.clear(gfx.kColorWhite)
+    end
 
     if self.showingUnlock and self.currentUnlockIndex <= #self.newUnlocks then
         self:drawUnlockScreen()
@@ -57,129 +75,181 @@ function DayEndScene:draw()
 end
 
 function DayEndScene:drawSummaryScreen()
-    -- Draw header
+    -- Content box dimensions - leave room at bottom for button
+    local boxMargin = 20
+    local boxTop = 15
+    local boxBottom = SCREEN_HEIGHT - 45  -- Leave room for button below
+    local boxHeight = boxBottom - boxTop
+
+    -- Draw white content box with border
+    gfx.setColor(gfx.kColorWhite)
+    gfx.fillRoundRect(boxMargin, boxTop, SCREEN_WIDTH - boxMargin * 2, boxHeight, 4)
+    gfx.setColor(gfx.kColorBlack)
+    gfx.drawRoundRect(boxMargin, boxTop, SCREEN_WIDTH - boxMargin * 2, boxHeight, 4)
+
+    -- Draw header title centered
     local dayCount = self.hotel and self.hotel.dayCount or 1
     Fonts.set(gfx.font.kVariantBold)
-    gfx.drawTextAligned("Day " .. dayCount .. " Complete!", SCREEN_WIDTH / 2, 15, kTextAlignment.center)
+    local headerY = boxTop + 10
+    gfx.drawTextAligned("Day " .. dayCount .. " Complete!", SCREEN_WIDTH / 2, headerY, kTextAlignment.center)
 
     -- Draw separator line
-    gfx.drawLine(20, 35, SCREEN_WIDTH - 20, 35)
-
-    -- Draw stats
     Fonts.reset()
-    local y = 45
-    local lineHeight = 18
+    local separatorY = boxTop + 30
+    gfx.drawLine(boxMargin + 12, separatorY, SCREEN_WIDTH - boxMargin - 12, separatorY)
+
+    -- Draw stats with increased margins
+    local y = separatorY + 8
+    local lineHeight = 16
+    local leftX = boxMargin + 20  -- More padding from edge
+    local rightX = SCREEN_WIDTH - boxMargin - 20
 
     -- Guests checked in (use hotel's daily stats)
     local checkIns = self.hotel and self.hotel.dailyCheckIns or 0
-    gfx.drawText("Guests Checked In:", 25, y)
-    gfx.drawTextAligned(tostring(checkIns), SCREEN_WIDTH - 35, y, kTextAlignment.right)
+    gfx.drawText("Guests Checked In:", leftX, y)
+    gfx.drawTextAligned(tostring(checkIns), rightX, y, kTextAlignment.right)
     y = y + lineHeight
 
     -- Guests checked out
     local checkOuts = self.hotel and self.hotel.dailyCheckOuts or 0
-    gfx.drawText("Guests Checked Out:", 25, y)
-    gfx.drawTextAligned(tostring(checkOuts), SCREEN_WIDTH - 35, y, kTextAlignment.right)
+    gfx.drawText("Guests Checked Out:", leftX, y)
+    gfx.drawTextAligned(tostring(checkOuts), rightX, y, kTextAlignment.right)
     y = y + lineHeight
 
     -- Monsters raged
-    gfx.drawText("Monsters Raged:", 25, y)
-    gfx.drawTextAligned(tostring(self.summary.rages or 0), SCREEN_WIDTH - 35, y, kTextAlignment.right)
+    gfx.drawText("Monsters Raged:", leftX, y)
+    gfx.drawTextAligned(tostring(self.summary.rages or 0), rightX, y, kTextAlignment.right)
     y = y + lineHeight
 
     -- Separator
-    y = y + 3
-    gfx.drawLine(20, y, SCREEN_WIDTH - 20, y)
-    y = y + 10
+    y = y + 4
+    gfx.drawLine(boxMargin + 12, y, SCREEN_WIDTH - boxMargin - 12, y)
+    y = y + 8
 
     -- Financial summary
     Fonts.set(gfx.font.kVariantBold)
-    gfx.drawText("Finances", 25, y)
+    gfx.drawText("Finances", leftX, y)
     y = y + lineHeight
 
     Fonts.reset()
 
     -- Earnings
-    gfx.drawText("  Room Earnings:", 25, y)
-    gfx.drawTextAligned("+" .. Utils.formatMoney(self.summary.earnings or 0), SCREEN_WIDTH - 35, y, kTextAlignment.right)
+    gfx.drawText("  Room Earnings:", leftX, y)
+    gfx.drawTextAligned("+" .. Utils.formatMoney(self.summary.earnings or 0), rightX, y, kTextAlignment.right)
     y = y + lineHeight
 
     -- Operating costs
-    gfx.drawText("  Operating Costs:", 25, y)
-    gfx.drawTextAligned("-" .. Utils.formatMoney(self.summary.operatingCost or 0), SCREEN_WIDTH - 35, y, kTextAlignment.right)
+    gfx.drawText("  Operating Costs:", leftX, y)
+    gfx.drawTextAligned("-" .. Utils.formatMoney(self.summary.operatingCost or 0), rightX, y, kTextAlignment.right)
     y = y + lineHeight
 
     -- Damage (only show if > 0)
     if (self.summary.damage or 0) > 0 then
-        gfx.drawText("  Rage Damage:", 25, y)
-        gfx.drawTextAligned("-" .. Utils.formatMoney(self.summary.damage), SCREEN_WIDTH - 35, y, kTextAlignment.right)
+        gfx.drawText("  Rage Damage:", leftX, y)
+        gfx.drawTextAligned("-" .. Utils.formatMoney(self.summary.damage), rightX, y, kTextAlignment.right)
         y = y + lineHeight
     end
 
     -- Net change line
-    gfx.drawLine(25, y, SCREEN_WIDTH - 25, y)
-    y = y + 4
+    gfx.drawLine(leftX, y + 2, rightX, y + 2)
+    y = y + 6
 
     -- Net change
     local netChange = self.summary.net or 0
     local netText = netChange >= 0 and ("+" .. Utils.formatMoney(netChange)) or ("-" .. Utils.formatMoney(math.abs(netChange)))
     Fonts.set(gfx.font.kVariantBold)
-    gfx.drawText("Net Change:", 25, y)
-    gfx.drawTextAligned(netText, SCREEN_WIDTH - 35, y, kTextAlignment.right)
-    y = y + lineHeight + 2
+    gfx.drawText("Net Change:", leftX, y)
+    gfx.drawTextAligned(netText, rightX, y, kTextAlignment.right)
+    y = y + lineHeight
 
     -- Current balance
-    gfx.drawText("Balance:", 25, y)
-    gfx.drawTextAligned(Utils.formatMoney(self.hotel.money), SCREEN_WIDTH - 35, y, kTextAlignment.right)
+    gfx.drawText("Balance:", leftX, y)
+    gfx.drawTextAligned(Utils.formatMoney(self.hotel.money), rightX, y, kTextAlignment.right)
 
-    -- Draw continue prompt at bottom
-    Fonts.set(gfx.font.kVariantItalic)
-    if #self.newUnlocks > 0 then
-        gfx.drawTextAligned("Press A to see unlocks", SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20, kTextAlignment.center)
-    else
-        gfx.drawTextAligned("Press A to start next day", SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20, kTextAlignment.center)
-    end
+    -- Draw button at bottom center
+    local promptText = #self.newUnlocks > 0 and "A: See Unlocks" or "A: Start Next Day"
+    Fonts.set(gfx.font.kVariantBold)
+    local textWidth, textHeight = gfx.getTextSize(promptText)
+    local buttonPadding = 10
+    local buttonWidth = textWidth + buttonPadding * 2
+    local buttonHeight = textHeight + 8
+    local buttonX = (SCREEN_WIDTH - buttonWidth) / 2
+    local buttonY = SCREEN_HEIGHT - buttonHeight - 8
+
+    -- White background with black border
+    gfx.setColor(gfx.kColorWhite)
+    gfx.fillRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 4)
+    gfx.setColor(gfx.kColorBlack)
+    gfx.drawRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 4)
+
+    -- Draw button text
+    gfx.drawTextAligned(promptText, SCREEN_WIDTH / 2, buttonY + 4, kTextAlignment.center)
 end
 
 function DayEndScene:drawUnlockScreen()
     local unlock = self.newUnlocks[self.currentUnlockIndex]
 
-    -- Draw header
-    Fonts.set(gfx.font.kVariantBold)
-    gfx.drawTextAligned("NEW UNLOCK!", SCREEN_WIDTH / 2, 40, kTextAlignment.center)
+    -- Content box dimensions - leave room at bottom for button
+    local boxMargin = 20
+    local boxTop = 15
+    local boxBottom = SCREEN_HEIGHT - 45
+    local boxHeight = boxBottom - boxTop
 
-    -- Draw unlock box
-    local boxWidth = 300
-    local boxHeight = 100
-    local boxX = (SCREEN_WIDTH - boxWidth) / 2
-    local boxY = 70
+    -- Draw white content box with border
+    gfx.setColor(gfx.kColorWhite)
+    gfx.fillRoundRect(boxMargin, boxTop, SCREEN_WIDTH - boxMargin * 2, boxHeight, 4)
+    gfx.setColor(gfx.kColorBlack)
+    gfx.drawRoundRect(boxMargin, boxTop, SCREEN_WIDTH - boxMargin * 2, boxHeight, 4)
+
+    -- Draw header title centered
+    local headerY = boxTop + 10
+    Fonts.set(gfx.font.kVariantBold)
+    gfx.drawTextAligned("NEW UNLOCK!", SCREEN_WIDTH / 2, headerY, kTextAlignment.center)
+
+    -- Draw unlock info box
+    local infoBoxWidth = 280
+    local infoBoxHeight = 80
+    local infoBoxX = (SCREEN_WIDTH - infoBoxWidth) / 2
+    local infoBoxY = boxTop + 45
 
     gfx.setColor(gfx.kColorBlack)
-    gfx.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 8)
-    gfx.drawRoundRect(boxX + 1, boxY + 1, boxWidth - 2, boxHeight - 2, 7)
+    gfx.drawRoundRect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight, 6)
 
     -- Draw unlock info
     Fonts.set(gfx.font.kVariantBold)
-    gfx.drawTextAligned(unlock.name or "Unknown", SCREEN_WIDTH / 2, boxY + 20, kTextAlignment.center)
+    gfx.drawTextAligned(unlock.name or "Unknown", SCREEN_WIDTH / 2, infoBoxY + 15, kTextAlignment.center)
 
     Fonts.reset()
     local description = unlock.description or ""
-    gfx.drawTextAligned(description, SCREEN_WIDTH / 2, boxY + 45, kTextAlignment.center)
+    gfx.drawTextAligned(description, SCREEN_WIDTH / 2, infoBoxY + 38, kTextAlignment.center)
 
     Fonts.set(gfx.font.kVariantItalic)
     local effectText = (unlock.type or "Bonus") .. ": +" .. (unlock.effect or "?")
-    gfx.drawTextAligned(effectText, SCREEN_WIDTH / 2, boxY + 70, kTextAlignment.center)
+    gfx.drawTextAligned(effectText, SCREEN_WIDTH / 2, infoBoxY + 58, kTextAlignment.center)
 
     -- Draw progress indicator
+    Fonts.reset()
     local progressText = "Unlock " .. self.currentUnlockIndex .. " of " .. #self.newUnlocks
-    gfx.drawTextAligned(progressText, SCREEN_WIDTH / 2, SCREEN_HEIGHT - 45, kTextAlignment.center)
+    gfx.drawTextAligned(progressText, SCREEN_WIDTH / 2, boxBottom - 15, kTextAlignment.center)
 
-    -- Draw continue prompt
-    if self.currentUnlockIndex < #self.newUnlocks then
-        gfx.drawTextAligned("Press A for next unlock", SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20, kTextAlignment.center)
-    else
-        gfx.drawTextAligned("Press A to start next day", SCREEN_WIDTH / 2, SCREEN_HEIGHT - 20, kTextAlignment.center)
-    end
+    -- Draw button at bottom center
+    local promptText = self.currentUnlockIndex < #self.newUnlocks and "A: Next Unlock" or "A: Start Next Day"
+    Fonts.set(gfx.font.kVariantBold)
+    local textWidth, textHeight = gfx.getTextSize(promptText)
+    local buttonPadding = 10
+    local buttonWidth = textWidth + buttonPadding * 2
+    local buttonHeight = textHeight + 8
+    local buttonX = (SCREEN_WIDTH - buttonWidth) / 2
+    local buttonY = SCREEN_HEIGHT - buttonHeight - 8
+
+    -- White background with black border
+    gfx.setColor(gfx.kColorWhite)
+    gfx.fillRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 4)
+    gfx.setColor(gfx.kColorBlack)
+    gfx.drawRoundRect(buttonX, buttonY, buttonWidth, buttonHeight, 4)
+
+    -- Draw button text
+    gfx.drawTextAligned(promptText, SCREEN_WIDTH / 2, buttonY + 4, kTextAlignment.center)
 end
 
 function DayEndScene:AButtonDown()

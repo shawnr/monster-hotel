@@ -16,6 +16,9 @@ function GameOverScene:enter(options)
     -- Animation
     self.fadeIn = 0
 
+    -- Play menu music
+    MusicSystem:playMenuMusic()
+
     -- Update lifetime stats
     local gameStats = {
         maxMoney = self.hotel.maxMoneyReached,

@@ -46,6 +46,15 @@ function GameScene:enter(options)
     self.showingLevelUp = false
     self.levelUpInfo = nil
 
+    -- Show crank indicator at start of gameplay (only if crank is docked)
+    self.showCrankIndicator = playdate.isCrankDocked()
+    if self.showCrankIndicator then
+        playdate.ui.crankIndicator:start()
+    end
+
+    -- Play gameplay music (switches between tracks every 2 minutes)
+    MusicSystem:playGameplayMusic()
+
     -- Set up hotel callback for level up
     self.hotel.onLevelUpCallback = function(changes)
         self:onHotelLevelUp(changes)
@@ -126,6 +135,13 @@ end
 
 function GameScene:update()
     if self.isPaused then return end
+
+    -- Handle D-pad elevator movement (continuous while held)
+    local upPressed = playdate.buttonIsPressed(playdate.kButtonUp)
+    local downPressed = playdate.buttonIsPressed(playdate.kButtonDown)
+    if upPressed or downPressed then
+        self.hotel.elevator:handleDPad(upPressed, downPressed)
+    end
 
     -- Update time
     TimeSystem:update()
@@ -220,17 +236,24 @@ function GameScene:handleElevatorInteractions()
         end
 
         -- Let monsters who reached the elevator board it
+        local elevatorLeftEdge = ELEVATOR_X
+        local elevatorRightEdge = ELEVATOR_X + ELEVATOR_WIDTH
         for _, monster in ipairs(self.hotel.monsters) do
-            if monster.state == MONSTER_STATE.ENTERING_ELEVATOR and
-               monster:isAtTarget() and elevator:canAcceptPassenger() then
-                -- Monster enters elevator - check if we actually get added
-                if elevator:addPassenger(monster) then
-                    self.hotel.lobby:removeMonster(monster)
-                    monster:enterElevator()
+            if monster.state == MONSTER_STATE.ENTERING_ELEVATOR and elevator:canAcceptPassenger() then
+                -- Check if monster is within elevator bounds (more forgiving than exact target)
+                local isWithinElevator = monster.x >= elevatorLeftEdge and monster.x <= elevatorRightEdge
+                local isCloseToTarget = math.abs(monster.x - monster.targetX) < 15
 
-                    -- Position inside elevator
-                    local px, py = elevator:getPassengerPosition(#elevator.passengers)
-                    monster:setPosition(px, py)
+                if isWithinElevator or (monster:isAtTarget() or isCloseToTarget) then
+                    -- Monster enters elevator - check if we actually get added
+                    if elevator:addPassenger(monster) then
+                        self.hotel.lobby:removeMonster(monster)
+                        monster:enterElevator()
+
+                        -- Position inside elevator
+                        local px, py = elevator:getPassengerPosition(#elevator.passengers)
+                        monster:setPosition(px, py)
+                    end
                 end
             end
         end
@@ -291,17 +314,24 @@ function GameScene:handleElevatorInteractions()
 
         -- Let checkout monsters board the elevator
         local elevatorCenterX = ELEVATOR_X + ELEVATOR_WIDTH / 2
+
         for _, monster in ipairs(self.hotel.monsters) do
             local monsterFloor = monster.assignedRoom and monster.assignedRoom.floorNumber or 0
 
             if monsterFloor == elevator.currentFloor then
-                if monster.state == MONSTER_STATE.WAITING_TO_CHECKOUT and elevator:canAcceptPassenger() then
-                    -- Start moving toward elevator center
-                    monster:startCheckout(elevatorCenterX)
+                if monster.state == MONSTER_STATE.WAITING_TO_CHECKOUT then
+                    -- Monster is waiting at elevator shaft - check if at target and can board
+                    if monster:isAtTarget() and elevator:canAcceptPassenger() then
+                        -- Start walking into the elevator
+                        monster:startBoardingElevator(elevatorCenterX)
+                    end
                 elseif monster.state == MONSTER_STATE.CHECKING_OUT then
-                    -- Check if monster is close to elevator (use proximity, not exact position)
-                    local distanceToElevator = math.abs(monster.x - elevatorCenterX)
-                    if distanceToElevator < 20 and elevator:canAcceptPassenger() then
+                    -- Check if monster has walked to the elevator center (their target)
+                    -- This ensures they visually enter the elevator before boarding
+                    local isAtTarget = monster:isAtTarget()
+                    local isCloseToTarget = math.abs(monster.x - monster.targetX) < 15
+
+                    if (isAtTarget or isCloseToTarget) and elevator:canAcceptPassenger() then
                         -- Close enough to board - check if we actually get added
                         if elevator:addPassenger(monster) then
                             monster:enterElevator()
@@ -313,13 +343,12 @@ function GameScene:handleElevatorInteractions()
                     end
                 end
             elseif monster.state == MONSTER_STATE.CHECKING_OUT and monsterFloor ~= elevator.currentFloor then
-                -- Monster was checking out but elevator left - reset to waiting at door
-                -- This prevents monsters getting stuck mid-checkout
+                -- Monster was boarding but elevator left - go back to waiting at elevator shaft
                 monster.state = MONSTER_STATE.WAITING_TO_CHECKOUT
                 if monster.assignedRoom then
-                    local doorCenterX = monster.assignedRoom.doorX + 19
                     local floorY = monster.assignedRoom.y + FLOOR_HEIGHT - 5
-                    monster:setTarget(doorCenterX, floorY)
+                    local elevatorWaitX = ELEVATOR_X + ELEVATOR_WIDTH + 10
+                    monster:setTarget(elevatorWaitX, floorY)
                 end
             end
         end
@@ -574,6 +603,11 @@ function GameScene:draw()
     if self.showingLevelUp and self.levelUpInfo then
         self:drawLevelUpNotification()
     end
+
+    -- Draw crank indicator only if crank is docked
+    if self.showCrankIndicator then
+        playdate.ui.crankIndicator:update()
+    end
 end
 
 function GameScene:cranked(change, acceleratedChange)
@@ -652,16 +686,24 @@ function GameScene:startNextDay()
     SpawnSystem:start()
     self.dayEnding = false
 
+    -- Reset patience for all monsters (they had a good night's sleep!)
+    for _, monster in ipairs(self.hotel.monsters) do
+        monster:resetPatience()
+    end
+
     -- Save at start of new day
     self:saveGame()
 end
 
 function GameScene:crankDocked()
-    -- Show crank indicator
+    -- Show crank indicator when crank is docked
+    self.showCrankIndicator = true
+    playdate.ui.crankIndicator:start()
 end
 
 function GameScene:crankUndocked()
-    -- Hide crank indicator
+    -- Hide crank indicator when crank is undocked
+    self.showCrankIndicator = false
 end
 
 return GameScene
