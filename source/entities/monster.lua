@@ -47,6 +47,12 @@ function Monster:init(monsterData, assignedRoom)
     -- Lobby index (for positioning)
     self.lobbyIndex = 0
 
+    -- Service floor tracking
+    self.serviceFloor = nil
+    self.serviceFloorIndex = 0
+    self.hasVisitedServiceFloor = false  -- Prevents re-exiting after reboarding
+    self.serviceFloorSettleTimer = 0  -- Must wait before boarding again
+
     -- Checkout time (set when checking out)
     self.checkoutHour = 0
 
@@ -99,11 +105,22 @@ end
 function Monster:update()
     -- Increment time spent (patience drain)
     -- Only count time when monster is visible and actively waiting/moving
-    -- Don't count time when: in room, invisible (waiting inside room), or exiting
+    -- Don't count time when: in room, on/heading to service floor, invisible, or exiting
+    local onServiceFloor = self.state == MONSTER_STATE.ON_SERVICE_FLOOR or
+                           self.state == MONSTER_STATE.EXITING_SERVICE_FLOOR or
+                           (self.serviceFloor ~= nil and self.state == MONSTER_STATE.EXITING_TO_ROOM)
     if self.visible and
        self.state ~= MONSTER_STATE.IN_ROOM and
-       self.state ~= MONSTER_STATE.EXITING_HOTEL then
+       self.state ~= MONSTER_STATE.EXITING_HOTEL and
+       not onServiceFloor then
         self.timeSpent = self.timeSpent + 1
+    end
+
+    -- Recharge patience when on service floor (reduce timeSpent)
+    if self.state == MONSTER_STATE.ON_SERVICE_FLOOR then
+        if self.timeSpent > 0 then
+            self.timeSpent = math.max(0, self.timeSpent - 2)  -- Recharge faster than drain
+        end
     end
 
     -- Note: Rage checking is handled by gameScene:handleMonsterRages()
@@ -128,11 +145,19 @@ function Monster:update()
         self:updateRaging()
     elseif self.state == MONSTER_STATE.EXITING_HOTEL then
         self:updateExitingHotel()
+    elseif self.state == MONSTER_STATE.ON_SERVICE_FLOOR then
+        -- Decrement settle timer (must wait before boarding again)
+        if self.serviceFloorSettleTimer > 0 then
+            self.serviceFloorSettleTimer = self.serviceFloorSettleTimer - 1
+        end
+    elseif self.state == MONSTER_STATE.EXITING_SERVICE_FLOOR then
+        -- Walking to elevator, handled by moveTowardsTarget
     end
 
-    -- Move towards target (but not when riding elevator or in room)
+    -- Move towards target (but not when riding elevator, in room, or on service floor)
     if self.state ~= MONSTER_STATE.RIDING_ELEVATOR and
-       self.state ~= MONSTER_STATE.IN_ROOM then
+       self.state ~= MONSTER_STATE.IN_ROOM and
+       self.state ~= MONSTER_STATE.ON_SERVICE_FLOOR then
         self:moveTowardsTarget()
     end
 
@@ -238,8 +263,12 @@ end
 
 function Monster:updateExitingToRoom()
     if self:isAtTarget() then
-        -- Arrived at room
-        self:enterRoom()
+        -- Check if heading to service floor or guest room
+        if self.serviceFloor then
+            self:enterServiceFloor()
+        else
+            self:enterRoom()
+        end
     end
 end
 
@@ -285,6 +314,8 @@ function Monster:enterRoom()
     end
     -- Reset time spent for checkout phase
     self.timeSpent = 0
+    -- Clear service floor visit flag for next trip
+    self.hasVisitedServiceFloor = false
     -- Hide while in room
     self.visible = false
 end
@@ -303,8 +334,17 @@ function Monster:exitRoom(checkoutHour)
         local floorY = self.assignedRoom.y + FLOOR_HEIGHT - 5
         local doorCenterX = self.assignedRoom.doorX + 19  -- Center of 38px door
         self:setPosition(doorCenterX, floorY)
-        -- Target: just to the right of elevator doors (wait position)
-        local elevatorWaitX = ELEVATOR_X + ELEVATOR_WIDTH + 10
+
+        -- Determine which side of elevator the room is on and wait on that side
+        local elevatorCenterX = ELEVATOR_X + ELEVATOR_WIDTH / 2
+        local elevatorWaitX
+        if doorCenterX < elevatorCenterX then
+            -- Room is on left side - wait just left of elevator
+            elevatorWaitX = ELEVATOR_X - 10
+        else
+            -- Room is on right side - wait just right of elevator
+            elevatorWaitX = ELEVATOR_X + ELEVATOR_WIDTH + 10
+        end
         self:setTarget(elevatorWaitX, floorY)
     end
 end
@@ -346,6 +386,31 @@ end
 function Monster:exitHotel()
     self.state = MONSTER_STATE.EXITING_HOTEL
     self:setTarget(SCREEN_WIDTH + 20, self.y)
+end
+
+-- Service floor transitions
+function Monster:exitElevatorToServiceFloor(targetX, floorY)
+    self.state = MONSTER_STATE.EXITING_TO_ROOM  -- Reuse this state for walking
+    self:setTarget(targetX, floorY + FLOOR_HEIGHT - 5)
+    -- Reset patience immediately when heading to service floor
+    -- (patience resets to base with modifiers, effectively timeSpent = 0)
+    self.timeSpent = 0
+end
+
+function Monster:enterServiceFloor()
+    self.state = MONSTER_STATE.ON_SERVICE_FLOOR
+    -- Reset time spent - patience will recharge on service floor
+    self.timeSpent = 0
+    self.visible = true
+    -- Set settle timer - monster must wait before they can board elevator again
+    -- 60 frames = ~2 seconds at 30fps, gives time to recharge patience
+    self.serviceFloorSettleTimer = 60
+end
+
+function Monster:startLeavingServiceFloor(elevatorCenterX)
+    -- Monster starts walking toward elevator to board
+    self.state = MONSTER_STATE.EXITING_SERVICE_FLOOR
+    self:setTarget(elevatorCenterX, self.y)
 end
 
 -- Reset patience (called at start of new day)
@@ -420,7 +485,14 @@ function Monster:draw()
                 frame:drawScaled(drawX, drawY, scale)
             else
                 -- Flip horizontally when facing left
-                frame:drawScaled(drawX + scaledWidth, drawY, -scale, scale)
+                -- Create scaled copy then draw with flip (drawScaled with negative scale positions incorrectly)
+                local scaledFrame = frame:scaledImage(scale, scale)
+                if scaledFrame then
+                    scaledFrame:draw(drawX, drawY, gfx.kImageFlippedX)
+                else
+                    -- Fallback: draw unflipped if scaling fails
+                    frame:drawScaled(drawX, drawY, scale)
+                end
             end
         end
     else

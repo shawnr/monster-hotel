@@ -1,30 +1,27 @@
 -- Monster Hotel - Music System
--- Handles background music playback
+-- Handles background music playback with single track
 
 MusicSystem = {}
 
--- Music tracks (loaded once)
-MusicSystem.track1 = nil  -- bossa-spooky (menu music, also used in gameplay rotation)
-MusicSystem.track2 = nil  -- spooky-bounce (gameplay starts with this)
+-- Single music track (loaded once)
+MusicSystem.track = nil
 
 -- Current state
-MusicSystem.currentTrack = nil
-MusicSystem.currentTrackNumber = 0
+MusicSystem.isPlaying = false
 MusicSystem.isGameplayMode = false
-MusicSystem.switchTimer = nil
-MusicSystem.SWITCH_INTERVAL = 2 * 60 * 1000  -- 2 minutes in milliseconds
 
 function MusicSystem:init()
-    -- Load music tracks
-    self.track1 = playdate.sound.fileplayer.new("audio/music/bossa-spooky_3")
-    self.track2 = playdate.sound.fileplayer.new("audio/music/spooky-bounce_3")
+    -- Load the single music track
+    self.track = playdate.sound.fileplayer.new("audio/music/martinis-to-mars")
+    self.isPlaying = false
+    self.isGameplayMode = false
 
-    print("MusicSystem initialized - track1:", self.track1, "track2:", self.track2)
+    print("MusicSystem initialized - track:", self.track)
 end
 
 function MusicSystem:playMenuMusic()
     -- If already playing menu music, don't restart
-    if not self.isGameplayMode and self.currentTrackNumber == 1 and self.currentTrack and self.currentTrack:isPlaying() then
+    if not self.isGameplayMode and self.isPlaying then
         return
     end
 
@@ -32,19 +29,18 @@ function MusicSystem:playMenuMusic()
     self:stopAll()
 
     self.isGameplayMode = false
-    self.currentTrackNumber = 1
 
-    -- Menu uses track 1 (bossa-spooky)
-    if self.track1 then
-        self.track1:play(0)  -- 0 = loop forever
-        self.currentTrack = self.track1
-        print("Playing menu music (track 1)")
+    -- Menu: loop forever
+    if self.track then
+        self.track:play(0)
+        self.isPlaying = true
+        print("Playing menu music (looping)")
     end
 end
 
 function MusicSystem:playGameplayMusic()
     -- If already in gameplay mode with music playing, don't restart
-    if self.isGameplayMode and self.currentTrack and self.currentTrack:isPlaying() then
+    if self.isGameplayMode and self.isPlaying then
         return
     end
 
@@ -52,91 +48,51 @@ function MusicSystem:playGameplayMusic()
     self:stopAll()
 
     self.isGameplayMode = true
-    self.currentTrackNumber = 2  -- Start gameplay with track 2 (spooky-bounce)
 
-    -- Start with track 2
-    self:playTrack(2)
-
-    -- Set up timer to switch tracks every 2 minutes
-    self:startSwitchTimer()
-end
-
-function MusicSystem:playTrack(trackNum)
-    -- Stop current track if playing
-    if self.currentTrack then
-        self.currentTrack:stop()
-    end
-
-    self.currentTrackNumber = trackNum
-
-    if trackNum == 1 then
-        if self.track1 then
-            self.track1:play(0)  -- Loop forever
-            self.currentTrack = self.track1
-            print("Playing track 1 (bossa-spooky)")
-        end
-    else
-        if self.track2 then
-            self.track2:play(0)  -- Loop forever
-            self.currentTrack = self.track2
-            print("Playing track 2 (spooky-bounce)")
-        end
+    -- Gameplay: play once then stop
+    if self.track then
+        self.track:play(1)
+        self.isPlaying = true
+        print("Playing gameplay music (once)")
     end
 end
 
-function MusicSystem:startSwitchTimer()
-    -- Cancel existing timer if any
-    if self.switchTimer then
-        self.switchTimer:remove()
-        self.switchTimer = nil
+-- Restart gameplay music (called on level up or new day)
+function MusicSystem:restartGameplayMusic()
+    -- Stop current playback
+    if self.track then
+        self.track:stop()
     end
 
-    -- Create new timer for track switching
-    self.switchTimer = playdate.timer.new(self.SWITCH_INTERVAL, function()
-        if self.isGameplayMode then
-            self:switchGameTrack()
-        end
-    end)
-    self.switchTimer.repeats = true
-end
+    self.isGameplayMode = true
+    self.isPlaying = false
 
-function MusicSystem:switchGameTrack()
-    -- Toggle between tracks 1 and 2
-    if self.currentTrackNumber == 1 then
-        self:playTrack(2)
-    else
-        self:playTrack(1)
+    -- Play once
+    if self.track then
+        self.track:play(1)
+        self.isPlaying = true
+        print("Gameplay music restarted (once)")
     end
-    print("Switched to track", self.currentTrackNumber)
 end
 
 function MusicSystem:stopAll()
-    if self.track1 then
-        self.track1:stop()
-    end
-    if self.track2 then
-        self.track2:stop()
+    if self.track then
+        self.track:stop()
     end
 
-    if self.switchTimer then
-        self.switchTimer:remove()
-        self.switchTimer = nil
-    end
-
-    self.currentTrack = nil
-    self.currentTrackNumber = 0
+    self.isPlaying = false
     self.isGameplayMode = false
 end
 
 function MusicSystem:pause()
-    if self.currentTrack then
-        self.currentTrack:pause()
+    if self.track and self.isPlaying then
+        self.track:pause()
     end
 end
 
 function MusicSystem:resume()
-    if self.currentTrack then
-        self.currentTrack:play(0)
+    if self.track then
+        self.track:play(0)
     end
 end
 

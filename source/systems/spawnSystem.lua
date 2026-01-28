@@ -45,13 +45,43 @@ function SpawnSystem:trySpawn()
 
     -- Calculate spawn chance
     local hour = self.timeSystem:getHour()
-    local baseChance = BASE_SPAWN_CHANCE + hour
+    local hotelLevel = self.hotel.level
+
+    -- Base chance increases with hotel level to ensure enough monsters for all rooms
+    -- Higher level hotels need more monsters per day
+    local levelBonus = hotelLevel * 5
+    local baseChance = BASE_SPAWN_CHANCE + hour + levelBonus
+
+    -- Catch-up bonus: increase spawn rate when many rooms are empty
+    -- This ensures the hotel fills up even on busy days
+    local totalRooms = self.hotel:getTotalRoomCount()
+    local availableRooms = self.hotel:getAvailableRoomCount()
+    local emptyRatio = totalRooms > 0 and (availableRooms / totalRooms) or 0
+    local catchUpBonus = emptyRatio * 30  -- Up to +30% when hotel is empty
+
     local modifier = self.timeSystem:getSpawnModifier()
-    local chance = baseChance * modifier
+    local chance = (baseChance + catchUpBonus) * modifier
 
     -- Roll for spawn
     if math.random(100) <= chance then
-        self:spawnMonster()
+        -- Determine how many monsters to spawn
+        local spawnCount = 1
+
+        -- At levels above 10, occasionally spawn multiple monsters
+        if hotelLevel > 10 then
+            local multiChance = (hotelLevel - 10) * 10  -- 10% at level 11, 20% at level 12, etc.
+            if math.random(100) <= multiChance then
+                -- 70% chance of 2 monsters, 30% chance of 3 monsters
+                spawnCount = math.random(100) <= 70 and 2 or 3
+            end
+        end
+
+        -- Spawn the monsters
+        for i = 1, spawnCount do
+            if self:canSpawn() then
+                self:spawnMonster()
+            end
+        end
     end
 end
 

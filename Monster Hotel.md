@@ -16,7 +16,7 @@ The game will be 2D like a side-scroller, tho it will scroll up and down instead
 
 # Base Gameplay loop
 
-* The game initializes with a view of a two floor monster hotel. The elevator goes up the middle of it. On the first floor are the front desk and lobby. It is a holding area for new monsters, and it has a max limit. The player starts with a sum of $1000
+* The game initializes with a view of a two floor monster hotel: the lobby at the bottom and one guest floor above. The elevator goes up the middle of it. The lobby is a holding area for new monsters, and it has a max limit. The player starts with a sum of $1000
 * The game plays out on day long loops: Day 1 starts at noon for faster action; subsequent days start at 8am and end at 2am.
   * At the beginning of each loop, the cost of running the hotel is removed from the hotel's money (this amount scales with the gameplay)
 * New monsters come spawn according to this formula:: CHANCE\_TO\_SPAWN\_NEW\_MONSTER \= 50 \+ current time of day (hours)
@@ -57,7 +57,7 @@ The gameplay could go on forever to endless levels. Achieving different goals in
 
 # Hotel Design
 
-The hotel starts out with a two floor design. 
+The hotel starts out with a two floor design: the lobby at the bottom and one guest floor above. 
 
 The bottom floor is always the Lobby. The Lobby can contain LOBBY\_MONSTER\_CAPACITY number of monsters, where LOBBY\_MONSTER\_CAPACITY  is part of the Lobby object data defined in the game.
 
@@ -127,19 +127,22 @@ Monster Hotel will make use of several core game data objects.
 ## Base Values
 
 1. HOTEL\_START\_LEVEL=1
-2. BASE\_MONSTER\_SPEED=4
-3. BASE\_ELEVATOR\_SPEED=4
-4. TIME\_SCALE=14.3 # Real seconds per game hour (5 real min = 18 game hours from 8am to 2am)
-5. GAME\_TICK\_RATE=30 # Game updates per real second (matches Playdate refresh rate)
-6. DAY\_START\_HOUR=8 # 8am - start of morning checkout period
-7. DAY\_END\_HOUR=26 # 2am next day (expressed as 24+2)
-8. MORNING\_END\_HOUR=12 # Noon - checkout period ends
+2. HOTEL\_START\_MONEY=1000
+3. BASE\_MONSTER\_SPEED=4
+4. BASE\_ELEVATOR\_SPEED=4
+5. TIME\_SCALE=7.15 # Real seconds per game hour (~2.5 real min day cycle)
+6. GAME\_TICK\_RATE=30 # Game updates per real second (matches Playdate refresh rate)
+7. DAY\_START\_HOUR=8 # 8am - start of morning checkout period
+8. DAY\_END\_HOUR=26 # 2am next day (expressed as 24+2)
+9. MORNING\_END\_HOUR=12 # Noon - checkout time ends
+10. BASE\_SPAWN\_CHANCE=50 # Base percentage chance to spawn
+11. MORNING\_SPAWN\_RATE=0.1 # 10% spawn rate in morning
 
 ## Hotel
 
 The hotel manages the game loop of time and events. These are the rules and requirements:
 
-1. One day in the game equals approximately 5 min of real time.
+1. One day in the game equals approximately 2.5 min of real time.
 2. Day 1 starts at noon to get into the action faster. Subsequent days start at 8am and end at 2am.
 3. At the beginning of the day, these things happen:
    1. Starts on a black screen that has the day count (eg "Day 1")
@@ -170,7 +173,7 @@ The elevator is the only object the user directly interacts with in the game. It
    2. Up and down on the D-Pad are provided as alternative inputs to control the elevator  
 2. The elevator moves according to the direction the user cranks/presses  
 3. The elevator speed is derived:  BASE\_ELEVATOR\_SPEED x Elevator.speed \= Actual elevator speed  
-4. The user can press A or B button to open the elevator doors  
+4. The user can press A, B, L (left), or R (right) buttons to open/close the elevator doors
    1. Monsters will not enter/exit the elevator unless the door is open  
 5. The elevator capacity is the total number of monsters who can ride the elevator at once
    1. When the elevator hits capacity no more Monsters will enter
@@ -183,7 +186,7 @@ The camera follows these rules:
 2. The camera scrolls smoothly as the elevator moves up and down
 3. The Lobby floor is always visible at the bottom when the elevator is on floors 1-2
 4. When the elevator is at the top floor, the camera stops scrolling and the top of the hotel is visible
-5. The Playdate screen is 400x240 pixels. Each floor is 60 pixels tall, allowing approximately 4 floors to be visible at once
+5. The Playdate screen is 400x240 pixels. Each floor is 91 pixels tall, allowing approximately 2 floors to be visible at once
 6. The elevator shaft runs vertically through the center of the screen (X position fixed)
 
 ## Monster Behavior
@@ -193,12 +196,13 @@ Monsters are the NPCs in the game. They move on their own and mimic a schedule o
 1. An instance of a Monster is spawned at the entrance of the hotel lobby  
    1. The spawning logic will randomly choose from Monsters with Minimum Hotel Level values at or below the current Hotel Level  
    2. The Monster will be assigned a room  
-   3. The room the Monster has been assigned will be labeled with the monster’s icon placed over the door  
-      1. If the floor with the Monster’s room is not currently visible, the Monster icon will hover at the top of the screen.   
-         1. The Monster icon will be placed at the same X value as the room door  
-         2. The Y value of the Monster icon will keep it in view at the top or bottom of the screen, depending on the location of their room relative to the current screen’s vertical scroll location  
-2. The Monster will walk to the Elevator and wait for doors to open.  
-   1. The monster moves (one tile+Monster.speed) per 2 game ticks  
+   3. The room the Monster has been assigned will be labeled with the monster's icon placed over the door
+      1. If the floor is not fully visible (less than 80% on screen), a pointer bubble appears at the edge of the screen
+         1. The bubble points up or down depending on whether the floor is above or below the current view
+         2. Bubbles appear even when a small part of the floor is visible, helping players track off-screen activity
+         3. Bubbles show for: monsters in elevator (pointing to destination), monsters waiting in lobby, monsters waiting to checkout, monsters on service floors
+2. The Monster will walk to the Elevator and wait for doors to open.
+   1. The monster moves (MONSTER\_TILE\_SIZE + Monster.speed) pixels per 3 game ticks (MONSTER\_MOVE\_TICKS)  
 3. The Monster will ride the elevator up to the floor with its room  
 4. The Monster will exit when the doors are open and move towards its assigned room  
 5. When the Monster arrives at the door of the room, they will enter the room.  
@@ -206,7 +210,8 @@ Monsters are the NPCs in the game. They move on their own and mimic a schedule o
 7. On the next day cycle, Monsters that have stayed in rooms will exit at random times between 8am and noon. The first monster always checks out at exactly 8am. When they exit their room, they will make their way to the elevator doors on their floor.   
 8. When the elevator arrives and the player opens the doors, the Monsters will enter, ride down to the Lobby, then exit the elevator and exit the hotel lobby, completing their stay  
 9. When a monster has left the Hotel the amount of money their room cost is added to the Hotel Account immediately  
-10. A Monster’s Calculated Amount of Patience is derived: Calculated Patience \= (Room.patience \+ Lobby.patience \+ Elevator.patience) x Monster.BasePatience \- Monster.timeSpent  
+10. A Monster's Calculated Amount of Patience is derived: Calculated Patience = Monster.BasePatience + Lobby.patienceModifier + Elevator.patienceModifier + Room.patienceModifier + UnlockablePatience - timeSpent
+    1. This is an ADDITIVE formula - each point of modifier adds 1 second of patience  
 11. Monster.timeSpent follows these rules and requirements:  
     1. timeSpent is reset when the monster enters the Hotel AND when the monster exits its room  
     2. timeSpent is counted in seconds of game time  
@@ -270,10 +275,10 @@ Floor Generation Table
 | :---- | :---- | :---- |
 | 1 | 1 | SINGLE, DOUBLE |
 | 2 | 1 | SINGLE, DOUBLE |
-| 3 | 1 | SINGLE, DOUBLE |
-| 4 | 1 | SINGLE, DOUBLE |
-| 5 | 2 | SINGLE, DOUBLE, SUITE |
-| 6 | 1 | SINGLE, DOUBLE, SUITE |
+| 3 | 1 | SINGLE, DOUBLE, SUITE |
+| 4 | 1 | SINGLE, DOUBLE, SUITE |
+| 5 | 2 | SINGLE, DOUBLE, SUITE, CAFE  |
+| 6 | 1 | SINGLE, DOUBLE, SUITE, CAFE  |
 | 7 | 2 | SINGLE, DOUBLE, SUITE, CAFE |
 | 8 | 1 | SINGLE, DOUBLE, SUITE, CAFE |
 | 9 | 1 | SINGLE, DOUBLE, SUITE, CAFE |
@@ -290,11 +295,9 @@ Floor Generation Table
    1. Each floor supports four rooms  
    2. Each room is assigned a type randomly selected from the list of available Floor types for that level  
    3. If the new level contains a new type of Room, then the first Room placed on that level will be that type. (eg. When the Hotel hits level 5, the new value SUITE is in the list of Available Room Types, so the first Room placed on that Floor will be a SUITE type)  
-   4. If the new Floor contains a CAFE, CONFERENCE or BALLROOM, then no other Rooms can be placed on the Floor  
-   5. Rooms are assigned a number:  
-      1. The first number of the room is the floor number  
-      2. The following number(s) of the room is randomly selected from (10-20)   
-   6. Rooms are placed in order of their room number with the highest number being the furthest Left door and spreading out from there.
+   4. If the new Floor contains a CAFE, CONFERENCE or BALLROOM, then no other Rooms can be placed on the Floor
+   5. Rooms are assigned a number: floor number + "0" + room index (e.g., Floor 1 has rooms 101, 102, 103, 104)
+   6. Rooms are positioned with 2 rooms on the left side of the elevator and 2 rooms on the right side
 
 ### Hotel Operating Costs Formula
 
@@ -320,31 +323,31 @@ ROOM\_TYPES \= {
 | Hotel level | Patience modifier | Capacity | Operational Costs |
 | :---- | :---- | :---- | :---- |
 | 1 | 1 | 8 | 10 |
-| 2 | 1 | 10 | 20 |
-| 3 | 1 | 11 | 40 |
-| 4 | 1 | 12 | 50 |
-| 5 | 2 | 13 | 60 |
-| 6 | 2 | 14 | 80 |
-| 7 | 2 | 18 | 100 |
-| 8 | 2 | 20 | 120 |
-| 9 | 2 | 22 | 140 |
-| 10 | 3 | 25 | 160 |
-| 11 | 3 | 29 | 180 |
-| 12 | 3 | 35 | 200 |
-| 13 | 3 | 45 | 250 |
-| 14 | 3 | 50 | 300 |
-| 15 | 4 | 100 | 500 |
+| 2 | 5 | 10 | 20 |
+| 3 | 8 | 11 | 40 |
+| 4 | 8 | 12 | 50 |
+| 5 | 8 | 13 | 60 |
+| 6 | 8 | 14 | 80 |
+| 7 | 9 | 18 | 100 |
+| 8 | 9 | 20 | 120 |
+| 9 | 9 | 22 | 140 |
+| 10 | 9 | 25 | 160 |
+| 11 | 9 | 29 | 180 |
+| 12 | 10 | 35 | 200 |
+| 13 | 10 | 45 | 250 |
+| 14 | 10 | 50 | 300 |
+| 15 | 11 | 100 | 500 |
 
 ### Elevator to Hotel Levels Table
 
 | Hotel Level | Name | Capacity | Speed | Patience Modifier |
 | :---- | :---- | :---- | :---- | :---- |
 | 1 | Rickety Lift | 2 | 1 | 0 |
-| 3 | Basic Elevator | 3 | 1.2 | 2 |
-| 6 | Modern Elevator | 4 | 1.5 | 5 |
-| 9 | Express Elevator | 5 | 2 | 8 |
-| 12 | Luxury Elevator | 6 | 2.5 | 12 |
-| 15 | Haunted Express | 8 | 3 | 15 |
+| 3 | Basic Elevator | 6 | 1.2 | 2 |
+| 6 | Modern Elevator | 10 | 1.5 | 5 |
+| 9 | Express Elevator | 15 | 2 | 8 |
+| 12 | Luxury Elevator | 20 | 2.5 | 12 |
+| 15 | Haunted Express | 30 | 3 | 15 |
 
 The Elevator automatically upgrades when the Hotel reaches the specified level. The player does not choose when to upgrade.
 
@@ -362,28 +365,59 @@ Note: In v1.0, each room holds exactly 1 monster regardless of capacity value. C
 
 | Type | Capacity | Patience Modifier | Cost |
 | :---- | :---- | :---- | :---- |
-| CAFE | 20 | CurrentHotelLevel | 100 |
-| CONFERENCE | 40 | 2\*CurrentHotelLevel | 200 |
-| BALLROOM | 100 | 4\*CurrentHotelLevel | 500 |
+| CAFE | LobbyCapacity / 2 | CurrentHotelLevel | 100 |
+| CONFERENCE | LobbyCapacity / 2 | 2\*CurrentHotelLevel | 200 |
+| BALLROOM | LobbyCapacity / 2 | 4\*CurrentHotelLevel | 500 |
 
-### Services Behavior (v1.0)
+Note: Service floor capacity scales with the lobby capacity, always at half the current lobby limit.
 
-In the initial release, SERVICE floors (CAFE, CONFERENCE, BALLROOM) are decorative only. They:
+### Services Behavior
+
+SERVICE floors (CAFE, CONFERENCE, BALLROOM) provide relaxation areas for monsters:
+
 1. Take up an entire floor (no guest rooms can be placed alongside them)
-2. Contribute to the hotel's visual progression and prestige
-3. Add to operating costs per the Hotel Operating Costs Formula
+2. Add to operating costs per the Hotel Operating Costs Formula
+3. Have a capacity equal to half the current lobby capacity
+4. Display a name label box on the left side (randomly generated names like "LoveCRAFT Beer & Grill")
 
-Future versions may allow monsters to visit services for patience boosts or bonus income.
+**Monster Relaxation Mechanic:**
+1. When the elevator doors open on a service floor, ALL non-checkout monsters exit to relax
+2. Monsters walk to the right side of the floor and wait there
+3. While on a service floor, monsters' patience RECHARGES (timeSpent decreases by 2 per tick)
+4. Monsters must "settle" for ~2 seconds before they can reboard the elevator
+5. When the elevator returns with doors open:
+   - If more than 4 monsters on the floor: half will board
+   - If 4 or fewer monsters: all will board
+6. Monsters who have visited a service floor won't exit again on subsequent service floors during the same trip
+
+**Day End Behavior:**
+- Any monsters still on service floors at day end will rage out
+- This prevents monsters from "hiding" on service floors indefinitely
 
 ### Monster Data Table
 
-| Name | Description | Icon | Speed | Base Patience | Base Damage Cost | Min Hotel Level |
-| :---- | :---- | :---- | :---- | :---- | :---- | :---- |
-| Ghoul | A fiend from beyond time and space. | Boss | 2 | 200 | 10 | 1 |
-| Giant Eyeball | The terrifying guardian of the dungeon. | EyeGuy | 1 | 400 | 20 | 1 |
-| Creeper | An unpredictable and frantic baddie. | Glitcher | 3 | 200 | 30 | 5 |
-| Zombie | Undead and proud of it. | Zombie | 1 | 500 | 10 | 10 |
-| Undercover Alien | Alien spy still with the fake human skin on. | Player | 2 | 500 | 50 | 15 |
+| Name | Description | Speed | Base Patience | Base Damage Cost | Min Hotel Level |
+| :---- | :---- | :---- | :---- | :---- | :---- |
+| Evil Robot | A malicious android. | 2 | 10 | 10 | 1 |
+| Flesheating Plant | A carnivorous vegetable. | 1 | 11 | 20 | 1 |
+| Spider | An arachnid of concern. | 3 | 7 | 30 | 5 |
+| Giant Slug | Slow but deadly. | 1 | 12 | 40 | 10 |
+| Undercover Alien | Alien spy still wearing a human disguise. | 3 | 8 | 60 | 15 |
+
+Note: Base Patience is measured in seconds of game time. Speed is added to the base tile movement.
+
+## In-Game Messages
+
+The game displays overlay messages at key moments to guide the player:
+
+| Trigger | Message | Behavior |
+| :---- | :---- | :---- |
+| Game starts/restarts | "Get the monsters to their rooms!" | Shows every time, center screen |
+| First time doors toggled | "Use A,B,L or R to open/close doors." | Shows only once (persisted) |
+| Service floor added | "Service floor added - enhances monster relaxation!" | Shows every time, center screen |
+| Monster rages | "Monster Rage!" | Shows on right side, floats up and fades, stacks if multiple |
+
+Messages display as bold black text with white stroke outline for visibility. Center messages show for 3 seconds then fade for 1 second. Rage messages show for 1.5 seconds then float upward while fading.
 
 # Meta Game Interaction Sequence
 

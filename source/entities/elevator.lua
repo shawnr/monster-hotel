@@ -101,8 +101,25 @@ function Elevator:update()
         self.snapTimer = 0
     end
 
+    -- Force passenger positions (also called explicitly after boarding)
+    self:forcePassengerPositions()
+
     -- Reset crank tracking
     self.lastCrankChange = 0
+end
+
+-- Force all passengers to correct position inside elevator
+-- Called from update() AND after any boarding happens in gameScene
+function Elevator:forcePassengerPositions()
+    local elevatorCenterX = self.x + ELEVATOR_WIDTH / 2
+    local elevatorFloorY = self.y + ELEVATOR_HEIGHT - 5
+
+    for _, monster in ipairs(self.passengers) do
+        monster.x = elevatorCenterX
+        monster.targetX = elevatorCenterX
+        monster.y = elevatorFloorY
+        monster.targetY = elevatorFloorY
+    end
 end
 
 function Elevator:handleCrank(crankChange)
@@ -153,7 +170,7 @@ function Elevator:moveByDelta(dx, dy)
     self.y = newY
 
     -- Move passengers with the elevator
-    for i, monster in ipairs(self.passengers) do
+    for _, monster in ipairs(self.passengers) do
         monster.y = monster.y + actualDy
         monster.targetY = monster.targetY + actualDy
     end
@@ -233,8 +250,15 @@ function Elevator:isAlignedWithAnyFloor()
 end
 
 function Elevator:toggleDoors()
-    -- Can only open/close doors when aligned with a floor
-    if self:isAlignedWithAnyFloor() then
+    -- Check if close enough to a floor (within half floor height for fast navigation)
+    local nearestFloorY, distance = self:getNearestFloorY()
+
+    if distance <= FLOOR_HEIGHT / 2 then
+        -- Snap to floor if not already aligned
+        if distance > 0 then
+            self:snapToFloor(nearestFloorY)
+        end
+        -- Now toggle doors
         self.doorsOpen = not self.doorsOpen
     end
 end
@@ -302,6 +326,92 @@ function Elevator:draw()
             doorImage:draw(self.x, self.y)
         end
     end
+
+    -- Draw floor indicator on closed doors (only when doors are fully closed)
+    if self:areDoorsFullyClosed() and #self.passengers > 0 then
+        local nextFloor = self:getNextDestinationFloor()
+        if nextFloor and nextFloor >= 0 then
+            self:drawFloorIndicator(nextFloor)
+        end
+    end
+end
+
+-- Get the next closest destination floor based on current position and direction
+function Elevator:getNextDestinationFloor()
+    if #self.passengers == 0 then
+        return nil
+    end
+
+    -- Collect all destination floors from passengers
+    local destinations = {}
+    for _, monster in ipairs(self.passengers) do
+        local destFloor = nil
+
+        -- Check-in monsters go to their assigned room
+        if monster.assignedRoom and not monster.isCheckingOut then
+            destFloor = monster.assignedRoom.floorNumber
+        -- Checkout monsters go to lobby (floor 0)
+        elseif monster.isCheckingOut then
+            destFloor = 0
+        end
+
+        if destFloor then
+            -- Avoid duplicates
+            local found = false
+            for _, d in ipairs(destinations) do
+                if d == destFloor then
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                table.insert(destinations, destFloor)
+            end
+        end
+    end
+
+    if #destinations == 0 then
+        return nil
+    end
+
+    -- Find the closest destination to current position
+    local currentFloor = self.currentFloor
+    local closestFloor = nil
+    local closestDistance = math.huge
+
+    for _, destFloor in ipairs(destinations) do
+        local distance = math.abs(destFloor - currentFloor)
+        if distance < closestDistance then
+            closestDistance = distance
+            closestFloor = destFloor
+        end
+    end
+
+    return closestFloor
+end
+
+-- Draw the floor number indicator on the elevator doors
+function Elevator:drawFloorIndicator(floorNumber)
+    -- Display floor number (0 = "L" for lobby, otherwise the number)
+    local floorText = floorNumber == 0 and "L" or tostring(floorNumber)
+
+    -- Position: centered on elevator doors
+    local centerX = self.x + ELEVATOR_WIDTH / 2
+    local centerY = self.y + ELEVATOR_HEIGHT / 2 - 10  -- Slightly above center
+
+    -- Draw background circle for visibility
+    local radius = 16
+    gfx.setColor(gfx.kColorWhite)
+    gfx.fillCircleAtPoint(centerX, centerY, radius)
+    gfx.setColor(gfx.kColorBlack)
+    gfx.drawCircleAtPoint(centerX, centerY, radius)
+    gfx.drawCircleAtPoint(centerX, centerY, radius - 1)  -- Thicker border
+
+    -- Draw the floor number text
+    Fonts.set(gfx.font.kVariantBold)
+    local textWidth, textHeight = gfx.getTextSize(floorText)
+    gfx.drawText(floorText, centerX - textWidth / 2, centerY - textHeight / 2)
+    Fonts.reset()
 end
 
 function Elevator:serialize()

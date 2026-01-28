@@ -9,6 +9,7 @@ import "systems/economySystem"
 import "ui/hud"
 import "ui/patienceIndicator"
 import "ui/roomIndicator"
+import "ui/messageOverlay"
 
 local gfx <const> = playdate.graphics
 
@@ -37,6 +38,14 @@ function GameScene:enter(options)
     -- Initialize UI
     self:initializeUI()
 
+    -- Initialize tutorial overlay
+    MessageOverlay:init()
+
+    -- Show game start tutorial for new games
+    if options.isNewGame then
+        MessageOverlay:show(MessageOverlay.MESSAGES.GAME_START)
+    end
+
     -- Game state
     self.isPaused = false
     self.dayEnding = false
@@ -45,6 +54,9 @@ function GameScene:enter(options)
     -- Level up notification
     self.showingLevelUp = false
     self.levelUpInfo = nil
+
+    -- No Vacancy dialog (shown when hotel is full)
+    self.showingNoVacancy = false
 
     -- Show crank indicator at start of gameplay (only if crank is docked)
     self.showCrankIndicator = playdate.isCrankDocked()
@@ -153,12 +165,16 @@ function GameScene:update()
     HUD:update()
     PatienceIndicator:update()
     RoomIndicator:update(self.hotel, self.cameraY)
+    MessageOverlay:update()
 
     -- Update camera to follow elevator
     self:updateCamera()
 
     -- Handle monster-elevator interactions
     self:handleElevatorInteractions()
+
+    -- Handle service floor monsters who were walking to elevator when it left
+    self:handleServiceFloorResets()
 
     -- Check for checkouts in morning
     if TimeSystem:isMorning() then
@@ -169,7 +185,14 @@ function GameScene:update()
     self:handleMonsterRages()
 
     -- Check if player can skip to morning (all rooms booked, past checkout time)
+    local wasSkippable = self.canSkipToMorning
     self.canSkipToMorning = self:checkCanSkipToMorning()
+
+    -- Show "No Vacancy" dialog when hotel becomes full (only trigger once)
+    if self.canSkipToMorning and not wasSkippable and not self.showingNoVacancy then
+        self.showingNoVacancy = true
+        self.isPaused = true
+    end
 end
 
 function GameScene:checkCanSkipToMorning()
@@ -236,15 +259,13 @@ function GameScene:handleElevatorInteractions()
         end
 
         -- Let monsters who reached the elevator board it
-        local elevatorLeftEdge = ELEVATOR_X
-        local elevatorRightEdge = ELEVATOR_X + ELEVATOR_WIDTH
+        local elevatorCenterX = ELEVATOR_X + ELEVATOR_WIDTH / 2
         for _, monster in ipairs(self.hotel.monsters) do
             if monster.state == MONSTER_STATE.ENTERING_ELEVATOR and elevator:canAcceptPassenger() then
-                -- Check if monster is within elevator bounds (more forgiving than exact target)
-                local isWithinElevator = monster.x >= elevatorLeftEdge and monster.x <= elevatorRightEdge
-                local isCloseToTarget = math.abs(monster.x - monster.targetX) < 15
+                -- Monster must reach elevator center before boarding (within 5px)
+                local distanceToCenter = math.abs(monster.x - elevatorCenterX)
 
-                if isWithinElevator or (monster:isAtTarget() or isCloseToTarget) then
+                if distanceToCenter < 5 then
                     -- Monster enters elevator - check if we actually get added
                     if elevator:addPassenger(monster) then
                         self.hotel.lobby:removeMonster(monster)
@@ -289,70 +310,145 @@ function GameScene:handleElevatorInteractions()
             end
         end
     else
-        -- At a guest floor
+        -- At a guest or service floor
         local currentFloor = self.hotel.floors[elevator.currentFloor]
         if not currentFloor then return end
 
-        -- Let monsters exit to their rooms (only check-in monsters, not checkout)
-        for i = #elevator.passengers, 1, -1 do
-            local monster = elevator.passengers[i]
-            -- Check-in monsters have: room.assignedMonster == monster, room.occupant == nil
-            -- Checkout monsters have: room.occupant == monster, room.assignedMonster == nil
-            if monster.assignedRoom and
-               monster.assignedRoom.floorNumber == elevator.currentFloor and
-               monster.state == MONSTER_STATE.RIDING_ELEVATOR and
-               monster.assignedRoom.assignedMonster == monster then
-                -- Exit to room (check-in)
-                elevator:removePassenger(monster)
-                monster:setPosition(ELEVATOR_X + ELEVATOR_WIDTH / 2, currentFloor.y + FLOOR_HEIGHT - 5)
-                monster:exitElevatorToRoom(monster.assignedRoom.doorX, currentFloor.y)
-
-                -- Track the check-in
-                self.hotel:recordCheckIn()
-            end
-        end
-
-        -- Let checkout monsters board the elevator
         local elevatorCenterX = ELEVATOR_X + ELEVATOR_WIDTH / 2
 
-        for _, monster in ipairs(self.hotel.monsters) do
-            local monsterFloor = monster.assignedRoom and monster.assignedRoom.floorNumber or 0
+        if currentFloor:isServiceFloor() then
+            -- SERVICE FLOOR HANDLING
 
-            if monsterFloor == elevator.currentFloor then
-                if monster.state == MONSTER_STATE.WAITING_TO_CHECKOUT then
-                    -- Monster is waiting at elevator shaft - check if at target and can board
-                    if monster:isAtTarget() and elevator:canAcceptPassenger() then
-                        -- Start walking into the elevator
-                        monster:startBoardingElevator(elevatorCenterX)
+            -- Monsters exit elevator to service floor when doors open
+            -- Skip monsters who just reboarded from a service floor (hasVisitedServiceFloor flag)
+            for i = #elevator.passengers, 1, -1 do
+                local monster = elevator.passengers[i]
+                -- Only non-checkout monsters who haven't visited a service floor yet
+                if monster.state == MONSTER_STATE.RIDING_ELEVATOR and
+                   not monster.isCheckingOut and
+                   not monster.hasVisitedServiceFloor then
+                    -- Mark that they've visited a service floor
+                    monster.hasVisitedServiceFloor = true
+                    -- Exit to service floor (no capacity limit)
+                    elevator:removePassenger(monster)
+                    monster:setPosition(elevatorCenterX, currentFloor.y + FLOOR_HEIGHT - 5)
+
+                    -- Walk to service position
+                    local targetX, targetY = currentFloor:getServiceWaitPosition(currentFloor:getServiceMonsterCount() + 1)
+                    monster:exitElevatorToServiceFloor(targetX, currentFloor.y)
+                    currentFloor:addServiceMonster(monster)
+                    monster.serviceFloor = currentFloor
+                end
+            end
+
+            -- Determine how many monsters should try to board
+            -- If more than 4 monsters: half try to board
+            -- If 4 or fewer: all try to board
+            local totalOnFloor = currentFloor:getServiceMonsterCount()
+            local monstersToBoard = totalOnFloor
+            if totalOnFloor > 4 then
+                monstersToBoard = math.floor(totalOnFloor / 2)
+            end
+            local boardingCount = 0
+
+            -- Let monsters on service floor board elevator
+            for i = #currentFloor.serviceMonsters, 1, -1 do
+                local monster = currentFloor.serviceMonsters[i]
+
+                if monster.state == MONSTER_STATE.ON_SERVICE_FLOOR then
+                    -- Only start walking if we haven't hit the boarding limit
+                    -- AND the monster has settled (waited minimum time on service floor)
+                    if boardingCount < monstersToBoard and
+                       elevator:canAcceptPassenger() and
+                       monster.serviceFloorSettleTimer <= 0 then
+                        monster:startLeavingServiceFloor(elevatorCenterX)
+                        boardingCount = boardingCount + 1
                     end
-                elseif monster.state == MONSTER_STATE.CHECKING_OUT then
-                    -- Check if monster has walked to the elevator center (their target)
-                    -- This ensures they visually enter the elevator before boarding
-                    local isAtTarget = monster:isAtTarget()
-                    local isCloseToTarget = math.abs(monster.x - monster.targetX) < 15
-
-                    if (isAtTarget or isCloseToTarget) and elevator:canAcceptPassenger() then
-                        -- Close enough to board - check if we actually get added
+                elseif monster.state == MONSTER_STATE.EXITING_SERVICE_FLOOR then
+                    -- Check if close enough to board
+                    local distanceToCenter = math.abs(monster.x - elevatorCenterX)
+                    if distanceToCenter < 5 and elevator:canAcceptPassenger() then
                         if elevator:addPassenger(monster) then
+                            currentFloor:removeServiceMonster(monster)
+                            monster.serviceFloor = nil
                             monster:enterElevator()
-
-                            -- Position inside elevator
                             local px, py = elevator:getPassengerPosition(#elevator.passengers)
                             monster:setPosition(px, py)
                         end
                     end
                 end
-            elseif monster.state == MONSTER_STATE.CHECKING_OUT and monsterFloor ~= elevator.currentFloor then
-                -- Monster was boarding but elevator left - go back to waiting at elevator shaft
-                monster.state = MONSTER_STATE.WAITING_TO_CHECKOUT
-                if monster.assignedRoom then
-                    local floorY = monster.assignedRoom.y + FLOOR_HEIGHT - 5
-                    local elevatorWaitX = ELEVATOR_X + ELEVATOR_WIDTH + 10
-                    monster:setTarget(elevatorWaitX, floorY)
+            end
+        else
+            -- GUEST FLOOR HANDLING
+            -- Let monsters exit to their rooms (only check-in monsters, not checkout)
+            for i = #elevator.passengers, 1, -1 do
+                local monster = elevator.passengers[i]
+                -- Check-in monsters have: room.assignedMonster == monster, room.occupant == nil
+                -- Checkout monsters have: room.occupant == monster, room.assignedMonster == nil
+                if monster.assignedRoom and
+                   monster.assignedRoom.floorNumber == elevator.currentFloor and
+                   monster.state == MONSTER_STATE.RIDING_ELEVATOR and
+                   monster.assignedRoom.assignedMonster == monster then
+                    -- Exit to room (check-in)
+                    elevator:removePassenger(monster)
+                    monster:setPosition(elevatorCenterX, currentFloor.y + FLOOR_HEIGHT - 5)
+                    monster:exitElevatorToRoom(monster.assignedRoom.doorX, currentFloor.y)
+
+                    -- Track the check-in
+                    self.hotel:recordCheckIn()
+                end
+            end
+
+            -- Let checkout monsters board the elevator
+            for _, monster in ipairs(self.hotel.monsters) do
+                local monsterFloor = monster.assignedRoom and monster.assignedRoom.floorNumber or 0
+
+                if monsterFloor == elevator.currentFloor then
+                    if monster.state == MONSTER_STATE.WAITING_TO_CHECKOUT then
+                        -- Monster is waiting at elevator shaft - check if at target and can board
+                        if monster:isAtTarget() and elevator:canAcceptPassenger() then
+                            -- Start walking into the elevator
+                            monster:startBoardingElevator(elevatorCenterX)
+                        end
+                    elseif monster.state == MONSTER_STATE.CHECKING_OUT then
+                        -- Monster must reach elevator center before boarding (within 5px)
+                        local distanceToCenter = math.abs(monster.x - elevatorCenterX)
+
+                        if distanceToCenter < 5 and elevator:canAcceptPassenger() then
+                            -- Close enough to board - check if we actually get added
+                            if elevator:addPassenger(monster) then
+                                monster:enterElevator()
+
+                                -- Position inside elevator
+                                local px, py = elevator:getPassengerPosition(#elevator.passengers)
+                                monster:setPosition(px, py)
+                            end
+                        end
+                    end
+                elseif monster.state == MONSTER_STATE.CHECKING_OUT and monsterFloor ~= elevator.currentFloor then
+                    -- Monster was boarding but elevator left - go back to waiting at elevator shaft
+                    monster.state = MONSTER_STATE.WAITING_TO_CHECKOUT
+                    if monster.assignedRoom then
+                        local floorY = monster.assignedRoom.y + FLOOR_HEIGHT - 5
+                        -- Return to same side they came from
+                        local doorCenterX = monster.assignedRoom.doorX + 19
+                        local waitElevatorCenterX = ELEVATOR_X + ELEVATOR_WIDTH / 2
+                        local elevatorWaitX
+                        if doorCenterX < waitElevatorCenterX then
+                            elevatorWaitX = ELEVATOR_X - 10
+                        else
+                            elevatorWaitX = ELEVATOR_X + ELEVATOR_WIDTH + 10
+                        end
+                        monster:setTarget(elevatorWaitX, floorY)
+                    end
                 end
             end
         end
     end
+
+    -- CRITICAL: Force all passenger positions after any boarding occurred
+    -- This ensures newly boarded passengers are at elevator center
+    elevator:forcePassengerPositions()
 end
 
 function GameScene:handleMorningCheckouts()
@@ -393,8 +489,11 @@ function GameScene:handleMonsterRages()
         if monster.state == MONSTER_STATE.RAGING then
             -- Already raging, let it continue
         elseif monster.state ~= MONSTER_STATE.IN_ROOM and
-               monster.state ~= MONSTER_STATE.EXITING_HOTEL then
-            -- Check patience
+               monster.state ~= MONSTER_STATE.EXITING_HOTEL and
+               monster.state ~= MONSTER_STATE.ON_SERVICE_FLOOR and
+               monster.state ~= MONSTER_STATE.EXITING_SERVICE_FLOOR and
+               not (monster.serviceFloor ~= nil and monster.state == MONSTER_STATE.EXITING_TO_ROOM) then
+            -- Check patience (monsters on/heading to service floors don't lose patience)
             local patience = monster:getCalculatedPatience(
                 self.hotel.lobby,
                 self.hotel.elevator,
@@ -404,6 +503,9 @@ function GameScene:handleMonsterRages()
             if patience <= 0 then
                 -- Monster has lost patience - START RAGE!
                 monster:startRage()
+
+                -- Show rage message
+                MessageOverlay:show(MessageOverlay.MESSAGES.MONSTER_RAGE)
 
                 -- Process damage
                 EconomySystem:processDamage(monster)
@@ -416,6 +518,35 @@ function GameScene:handleMonsterRages()
 
                 -- Remove from lobby if inside
                 self.hotel.lobby:removeMonster(monster)
+
+                -- Remove from service floor if inside
+                if monster.serviceFloor then
+                    monster.serviceFloor:removeServiceMonster(monster)
+                    monster.serviceFloor = nil
+                end
+            end
+        end
+    end
+end
+
+function GameScene:handleServiceFloorResets()
+    -- Check all service floors for monsters who were walking to elevator when it left
+    local elevator = self.hotel.elevator
+
+    for _, floor in ipairs(self.hotel.floors) do
+        if floor:isServiceFloor() then
+            -- Only reset if elevator is NOT at this floor (ignore door state)
+            local elevatorAtThisFloor = elevator.currentFloor == floor.floorNumber
+
+            if not elevatorAtThisFloor then
+                -- Elevator left this floor - reset any monsters trying to board
+                for _, monster in ipairs(floor.serviceMonsters) do
+                    if monster.state == MONSTER_STATE.EXITING_SERVICE_FLOOR then
+                        monster:enterServiceFloor()
+                        local targetX, targetY = floor:getServiceWaitPosition(monster.serviceFloorIndex)
+                        monster:setTarget(targetX, targetY)
+                    end
+                end
             end
         end
     end
@@ -425,11 +556,37 @@ function GameScene:onHourChange(hour)
     -- Hour changed - could trigger events
 end
 
+function GameScene:rageOutServiceFloorMonsters()
+    -- At day end, all monsters on service floors rage out
+    for _, floor in ipairs(self.hotel.floors) do
+        if floor:isServiceFloor() then
+            local monsters = floor:rageOutServiceMonsters()
+            for _, monster in ipairs(monsters) do
+                -- Start rage
+                monster:startRage()
+                monster.serviceFloor = nil
+
+                -- Show rage message
+                MessageOverlay:show(MessageOverlay.MESSAGES.MONSTER_RAGE)
+
+                -- Process damage
+                EconomySystem:processDamage(monster)
+
+                -- Track rage for stats
+                self.hotel.totalRages = self.hotel.totalRages + 1
+            end
+        end
+    end
+end
+
 function GameScene:onDayEnd()
     self.dayEnding = true
 
     -- Stop spawning
     SpawnSystem:stop()
+
+    -- Rage out all monsters on service floors before ending day
+    self:rageOutServiceFloorMonsters()
 
     -- Calculate end of day costs
     EconomySystem:endDay()
@@ -485,12 +642,33 @@ function GameScene:onHotelLevelUp(changes)
     self.showingLevelUp = true
     self.levelUpInfo = changes
     self.isPaused = true
+
+    -- Restart gameplay music on level up
+    MusicSystem:restartGameplayMusic()
+
+    -- Service floor message will be shown when level up notification is dismissed
+    -- (see dismissLevelUp)
 end
 
 function GameScene:dismissLevelUp()
+    -- Check if we need to show service floor message after dismissing level up
+    local showServiceFloorMessage = self.levelUpInfo and self.levelUpInfo.serviceFloorAdded
+
     self.showingLevelUp = false
     self.levelUpInfo = nil
     self.isPaused = false
+
+    -- Show service floor tutorial AFTER level up notification is dismissed
+    if showServiceFloorMessage then
+        MessageOverlay:show(MessageOverlay.MESSAGES.SERVICE_FLOOR)
+    end
+end
+
+function GameScene:toggleElevatorDoors()
+    -- Show tutorial on first door toggle
+    MessageOverlay:show(MessageOverlay.MESSAGES.ELEVATOR_DOORS)
+    -- Actually toggle the doors
+    self.hotel.elevator:toggleDoors()
 end
 
 function GameScene:drawLevelUpNotification()
@@ -559,6 +737,44 @@ function GameScene:drawLevelUpNotification()
     gfx.drawTextAligned("Press any button to continue", SCREEN_WIDTH / 2, boxY + boxHeight - 22, kTextAlignment.center)
 end
 
+function GameScene:drawNoVacancyDialog()
+    -- Draw semi-transparent overlay
+    gfx.setColor(gfx.kColorWhite)
+    gfx.setDitherPattern(0.5)
+    gfx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
+    gfx.setDitherPattern(0)
+
+    -- Draw dialog box
+    local boxWidth = 220
+    local boxHeight = 100
+    local boxX = (SCREEN_WIDTH - boxWidth) / 2
+    local boxY = (SCREEN_HEIGHT - boxHeight) / 2
+
+    gfx.setColor(gfx.kColorWhite)
+    gfx.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 8)
+    gfx.setColor(gfx.kColorBlack)
+    gfx.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 8)
+    gfx.drawRoundRect(boxX + 1, boxY + 1, boxWidth - 2, boxHeight - 2, 7)
+
+    -- Draw title
+    Fonts.set(gfx.font.kVariantBold)
+    gfx.drawTextAligned("NO VACANCY", SCREEN_WIDTH / 2, boxY + 22, kTextAlignment.center)
+
+    -- Draw message
+    Fonts.reset()
+    gfx.drawTextAligned("All rooms occupied!", SCREEN_WIDTH / 2, boxY + 48, kTextAlignment.center)
+
+    -- Draw continue prompt
+    Fonts.set(gfx.font.kVariantItalic)
+    gfx.drawTextAligned("Press Any Button to Continue", SCREEN_WIDTH / 2, boxY + boxHeight - 24, kTextAlignment.center)
+end
+
+function GameScene:dismissNoVacancy()
+    self.showingNoVacancy = false
+    self.isPaused = false
+    TimeSystem:skipToMorning()
+end
+
 function GameScene:draw()
     -- Clear screen
     gfx.clear(gfx.kColorWhite)
@@ -583,31 +799,23 @@ function GameScene:draw()
     HUD:draw()
     HUD:drawElevatorInfo(self.hotel.elevator)
 
-    -- Draw skip to morning indicator if available
-    if self.canSkipToMorning then
-        Fonts.set(gfx.font.kVariantBold)
-        local skipText = "B: Skip to Morning"
-        local textWidth, textHeight = gfx.getTextSize(skipText)
-        local x = SCREEN_WIDTH - textWidth - 10
-        local y = 25
-
-        -- Draw background
-        gfx.setColor(gfx.kColorWhite)
-        gfx.fillRect(x - 4, y - 2, textWidth + 8, textHeight + 4)
-        gfx.setColor(gfx.kColorBlack)
-        gfx.drawRect(x - 4, y - 2, textWidth + 8, textHeight + 4)
-        gfx.drawText(skipText, x, y)
-    end
-
     -- Draw level-up notification on top of everything
     if self.showingLevelUp and self.levelUpInfo then
         self:drawLevelUpNotification()
+    end
+
+    -- Draw No Vacancy dialog on top of everything
+    if self.showingNoVacancy then
+        self:drawNoVacancyDialog()
     end
 
     -- Draw crank indicator only if crank is docked
     if self.showCrankIndicator then
         playdate.ui.crankIndicator:update()
     end
+
+    -- Draw tutorial overlay on top of everything
+    MessageOverlay:draw()
 end
 
 function GameScene:cranked(change, acceleratedChange)
@@ -631,8 +839,15 @@ function GameScene:leftButtonDown()
         self:dismissLevelUp()
         return
     end
+
+    -- Dismiss No Vacancy dialog with any button
+    if self.showingNoVacancy then
+        self:dismissNoVacancy()
+        return
+    end
+
     if self.isPaused then return end
-    self.hotel.elevator:toggleDoors()
+    self:toggleElevatorDoors()
 end
 
 function GameScene:rightButtonDown()
@@ -641,8 +856,15 @@ function GameScene:rightButtonDown()
         self:dismissLevelUp()
         return
     end
+
+    -- Dismiss No Vacancy dialog with any button
+    if self.showingNoVacancy then
+        self:dismissNoVacancy()
+        return
+    end
+
     if self.isPaused then return end
-    self.hotel.elevator:toggleDoors()
+    self:toggleElevatorDoors()
 end
 
 function GameScene:AButtonDown()
@@ -651,8 +873,15 @@ function GameScene:AButtonDown()
         self:dismissLevelUp()
         return
     end
+
+    -- Dismiss No Vacancy dialog with any button
+    if self.showingNoVacancy then
+        self:dismissNoVacancy()
+        return
+    end
+
     if self.isPaused then return end
-    self.hotel.elevator:toggleDoors()
+    self:toggleElevatorDoors()
 end
 
 function GameScene:BButtonDown()
@@ -661,16 +890,17 @@ function GameScene:BButtonDown()
         self:dismissLevelUp()
         return
     end
-    if self.isPaused then return end
 
-    -- If skip to morning is available, use B to skip
-    if self.canSkipToMorning then
-        TimeSystem:skipToMorning()
+    -- Dismiss No Vacancy dialog with B button
+    if self.showingNoVacancy then
+        self:dismissNoVacancy()
         return
     end
 
+    if self.isPaused then return end
+
     -- Otherwise, toggle elevator doors
-    self.hotel.elevator:toggleDoors()
+    self:toggleElevatorDoors()
 end
 
 function GameScene:saveGame()
@@ -690,6 +920,9 @@ function GameScene:startNextDay()
     for _, monster in ipairs(self.hotel.monsters) do
         monster:resetPatience()
     end
+
+    -- Restart gameplay music for new day
+    MusicSystem:restartGameplayMusic()
 
     -- Save at start of new day
     self:saveGame()

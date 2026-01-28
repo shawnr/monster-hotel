@@ -90,7 +90,9 @@ MONSTER_STATE = {
     WAITING_TO_CHECKOUT = 6,
     CHECKING_OUT = 7,
     RAGING = 8,
-    EXITING_HOTEL = 9
+    EXITING_HOTEL = 9,
+    ON_SERVICE_FLOOR = 10,
+    EXITING_SERVICE_FLOOR = 11
 }
 
 -- Patience indicator thresholds (percentage of base patience consumed)

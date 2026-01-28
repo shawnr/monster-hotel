@@ -12,35 +12,35 @@ ElevatorData = {
     {
         minLevel = 3,
         name = "Basic Elevator",
-        capacity = 3,
+        capacity = 6,
         speed = 1.2,
         patienceModifier = 2
     },
     {
         minLevel = 6,
         name = "Modern Elevator",
-        capacity = 4,
+        capacity = 10,
         speed = 1.5,
         patienceModifier = 5
     },
     {
         minLevel = 9,
         name = "Express Elevator",
-        capacity = 5,
+        capacity = 15,
         speed = 2,
         patienceModifier = 8
     },
     {
         minLevel = 12,
         name = "Luxury Elevator",
-        capacity = 6,
+        capacity = 20,
         speed = 2.5,
         patienceModifier = 12
     },
     {
         minLevel = 15,
         name = "Haunted Express",
-        capacity = 8,
+        capacity = 30,
         speed = 3,
         patienceModifier = 15
     }

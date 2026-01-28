@@ -34,6 +34,13 @@ function Hotel:init()
     -- All monsters in the hotel
     self.monsters = {}
 
+    -- Track which service floor types have been added (for first-time guarantee)
+    self.addedServiceTypes = {
+        [FLOOR_TYPE.CAFE] = false,
+        [FLOOR_TYPE.CONFERENCE] = false,
+        [FLOOR_TYPE.BALLROOM] = false
+    }
+
     -- Initialize with starting configuration
     self:initializeNewHotel()
 end
@@ -204,7 +211,8 @@ function Hotel:onLevelUp(oldLevel, newLevel)
         oldLevel = oldLevel,
         floorsAdded = 0,
         elevatorName = nil,  -- Only set if actually upgraded
-        lobbyCapacity = nil  -- Only set if actually increased
+        lobbyCapacity = nil, -- Only set if actually increased
+        serviceFloorAdded = false  -- Set if a service floor was added
     }
 
     -- Upgrade elevator
@@ -218,6 +226,9 @@ function Hotel:onLevelUp(oldLevel, newLevel)
     if self.lobby.capacity > oldLobbyCapacity then
         changes.lobbyCapacity = self.lobby.capacity
     end
+
+    -- Check for newly available service types that must be added
+    local forcedServiceType = self:getNewlyAvailableServiceType(newLevel)
 
     -- Add new floors (they're added at the TOP, so everything shifts DOWN)
     local floorsToAdd = Floor.getFloorsToSpawn(newLevel)
@@ -235,7 +246,12 @@ function Hotel:onLevelUp(oldLevel, newLevel)
     end
 
     for i = 1, floorsToAdd do
-        self:addNewFloor(newLevel)
+        -- First floor at this level uses the forced service type (if any)
+        local forceType = (i == 1) and forcedServiceType or nil
+        local isServiceFloor = self:addNewFloor(newLevel, forceType)
+        if isServiceFloor then
+            changes.serviceFloorAdded = true
+        end
     end
 
     self:recalculateLayout()
@@ -246,26 +262,69 @@ function Hotel:onLevelUp(oldLevel, newLevel)
     end
 end
 
-function Hotel:addNewFloor(hotelLevel)
+-- Check if a service type is newly available at this level and hasn't been added yet
+function Hotel:getNewlyAvailableServiceType(hotelLevel)
+    -- Service type availability levels from FLOOR_GENERATION:
+    -- Level 5: CAFE
+    -- Level 10: CONFERENCE
+    -- Level 15: BALLROOM
+
+    local newServiceType = nil
+
+    if hotelLevel >= 5 then
+        -- Check if CAFE is available and hasn't been added
+        if not self.addedServiceTypes[FLOOR_TYPE.CAFE] then
+            newServiceType = FLOOR_TYPE.CAFE
+        end
+    end
+
+    if hotelLevel >= 10 then
+        -- Check if CONFERENCE is available and hasn't been added
+        if not self.addedServiceTypes[FLOOR_TYPE.CONFERENCE] then
+            newServiceType = FLOOR_TYPE.CONFERENCE
+        end
+    end
+
+    if hotelLevel >= 15 then
+        -- Check if BALLROOM is available and hasn't been added
+        if not self.addedServiceTypes[FLOOR_TYPE.BALLROOM] then
+            newServiceType = FLOOR_TYPE.BALLROOM
+        end
+    end
+
+    return newServiceType
+end
+
+function Hotel:addNewFloor(hotelLevel, forcedServiceType)
     local floorNumber = #self.floors + 1
 
     -- Determine floor type (check for service floors at certain levels)
     local floorType = FLOOR_TYPE.GUEST
-    local availableTypes = Floor.getAvailableTypes(hotelLevel)
 
-    -- Check if this level introduces a new service type
-    for _, roomType in ipairs(availableTypes) do
-        if RoomData.isService(roomType) then
-            -- 20% chance of service floor when available
-            if math.random(100) <= 20 then
-                if roomType == ROOM_TYPE.CAFE then
-                    floorType = FLOOR_TYPE.CAFE
-                elseif roomType == ROOM_TYPE.CONFERENCE then
-                    floorType = FLOOR_TYPE.CONFERENCE
-                elseif roomType == ROOM_TYPE.BALLROOM then
-                    floorType = FLOOR_TYPE.BALLROOM
+    -- If a service type is forced (first-time guarantee), use it
+    if forcedServiceType then
+        floorType = forcedServiceType
+        self.addedServiceTypes[forcedServiceType] = true
+        print("Guaranteed service floor added:", forcedServiceType)
+    else
+        -- Normal logic: 20% chance of service floor when available
+        local availableTypes = Floor.getAvailableTypes(hotelLevel)
+        for _, roomType in ipairs(availableTypes) do
+            if RoomData.isService(roomType) then
+                -- 20% chance of service floor when available
+                if math.random(100) <= 20 then
+                    if roomType == ROOM_TYPE.CAFE then
+                        floorType = FLOOR_TYPE.CAFE
+                        self.addedServiceTypes[FLOOR_TYPE.CAFE] = true
+                    elseif roomType == ROOM_TYPE.CONFERENCE then
+                        floorType = FLOOR_TYPE.CONFERENCE
+                        self.addedServiceTypes[FLOOR_TYPE.CONFERENCE] = true
+                    elseif roomType == ROOM_TYPE.BALLROOM then
+                        floorType = FLOOR_TYPE.BALLROOM
+                        self.addedServiceTypes[FLOOR_TYPE.BALLROOM] = true
+                    end
+                    break
                 end
-                break
             end
         end
     end
@@ -273,16 +332,26 @@ function Hotel:addNewFloor(hotelLevel)
     -- New floor added during gameplay - mark as new for fade-in animation
     local newFloor = Floor(floorNumber, hotelLevel, floorType, true)
     table.insert(self.floors, newFloor)
+
+    -- Return whether this was a service floor
+    return floorType ~= FLOOR_TYPE.GUEST
 end
 
 -- Room management
 function Hotel:getAvailableRoom()
-    -- Find first available room across all floors
+    -- Collect all available rooms across all floors
+    local availableRooms = {}
     for _, floor in ipairs(self.floors) do
-        local room = floor:getAvailableRoom()
-        if room then
-            return room
+        for _, room in ipairs(floor.rooms) do
+            if room:isAvailable() then
+                table.insert(availableRooms, room)
+            end
         end
+    end
+
+    -- Pick a random room from available ones
+    if #availableRooms > 0 then
+        return availableRooms[math.random(#availableRooms)]
     end
     return nil
 end
@@ -425,6 +494,7 @@ function Hotel:serialize()
         maxMoneyReached = self.maxMoneyReached,
         guestsServed = self.guestsServed,
         totalRages = self.totalRages,
+        addedServiceTypes = self.addedServiceTypes,
         lobby = self.lobby:serialize(),
         elevator = self.elevator:serialize(),
         floors = floorsData,
@@ -440,12 +510,33 @@ function Hotel:deserialize(data)
     self.guestsServed = data.guestsServed or 0
     self.totalRages = data.totalRages or 0
 
+    -- Restore added service types tracking (or scan floors for legacy saves)
+    if data.addedServiceTypes then
+        self.addedServiceTypes = data.addedServiceTypes
+    else
+        -- Legacy save - scan floors to determine what service types exist
+        self.addedServiceTypes = {
+            [FLOOR_TYPE.CAFE] = false,
+            [FLOOR_TYPE.CONFERENCE] = false,
+            [FLOOR_TYPE.BALLROOM] = false
+        }
+    end
+
     -- Restore floors first (creates rooms without monster links)
     self.floors = {}
     for _, floorData in ipairs(data.floors) do
         local floor = Floor(floorData.floorNumber, floorData.hotelLevel, floorData.floorType)
         floor:deserialize(floorData, nil)
         table.insert(self.floors, floor)
+
+        -- Track service types from existing floors (for legacy saves)
+        if floorData.floorType == FLOOR_TYPE.CAFE then
+            self.addedServiceTypes[FLOOR_TYPE.CAFE] = true
+        elseif floorData.floorType == FLOOR_TYPE.CONFERENCE then
+            self.addedServiceTypes[FLOOR_TYPE.CONFERENCE] = true
+        elseif floorData.floorType == FLOOR_TYPE.BALLROOM then
+            self.addedServiceTypes[FLOOR_TYPE.BALLROOM] = true
+        end
     end
 
     -- Get all rooms for monster deserialization

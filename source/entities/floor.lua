@@ -1,6 +1,7 @@
 -- Monster Hotel - Floor Entity
 
 import "entities/room"
+import "data/serviceFloorData"
 
 local gfx <const> = playdate.graphics
 
@@ -26,14 +27,14 @@ function Floor.loadAssets()
     end
 end
 
--- Floor generation table from GDD
+-- Floor generation table from GDD (line 267)
 local FLOOR_GENERATION = {
     [1] = { floors = 1, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE } },
     [2] = { floors = 1, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE } },
-    [3] = { floors = 1, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE } },
-    [4] = { floors = 1, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE } },
-    [5] = { floors = 2, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE, ROOM_TYPE.SUITE } },
-    [6] = { floors = 1, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE, ROOM_TYPE.SUITE } },
+    [3] = { floors = 1, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE, ROOM_TYPE.SUITE } },
+    [4] = { floors = 1, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE, ROOM_TYPE.SUITE } },
+    [5] = { floors = 2, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE, ROOM_TYPE.SUITE, ROOM_TYPE.CAFE } },
+    [6] = { floors = 1, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE, ROOM_TYPE.SUITE, ROOM_TYPE.CAFE } },
     [7] = { floors = 2, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE, ROOM_TYPE.SUITE, ROOM_TYPE.CAFE } },
     [8] = { floors = 1, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE, ROOM_TYPE.SUITE, ROOM_TYPE.CAFE } },
     [9] = { floors = 1, types = { ROOM_TYPE.SINGLE, ROOM_TYPE.DOUBLE, ROOM_TYPE.SUITE, ROOM_TYPE.CAFE } },
@@ -58,6 +59,9 @@ function Floor:init(floorNumber, hotelLevel, floorType, isNewFloor)
     self.rooms = {}
     self.y = 0  -- Will be set by hotel
 
+    -- Service floor monster tracking
+    self.serviceMonsters = {}
+
     -- Fade-in animation for new floors (0 = invisible, 1 = fully visible)
     -- New floors start invisible and fade in; existing floors start fully visible
     self.fadeAlpha = isNewFloor and 0.0 or 1.0
@@ -66,12 +70,17 @@ function Floor:init(floorNumber, hotelLevel, floorType, isNewFloor)
     -- Determine which background to use (alternates between floors)
     self.backgroundIndex = ((floorNumber - 1) % 2) + 1
 
-    -- Generate rooms based on floor type
+    -- Service floor name (randomly selected for service floors)
+    self.serviceName = nil
+    if self:isServiceFloor() then
+        self.serviceName = ServiceFloorData.getRandomName(self.floorType)
+    end
+
+    -- Generate rooms based on floor type (service floors have no rooms)
     if self.floorType == FLOOR_TYPE.GUEST then
         self:generateGuestRooms(hotelLevel)
-    elseif self.floorType ~= FLOOR_TYPE.LOBBY then
-        self:generateServiceFloor()
     end
+    -- Service floors don't have guest rooms - they just have the background and label
 end
 
 function Floor:setY(y)
@@ -143,22 +152,6 @@ function Floor:generateGuestRooms(hotelLevel)
     self:updateRoomPositions()
 end
 
-function Floor:generateServiceFloor()
-    -- Service floors have one "room" that takes the whole floor
-    local serviceType
-    if self.floorType == FLOOR_TYPE.CAFE then
-        serviceType = ROOM_TYPE.CAFE
-    elseif self.floorType == FLOOR_TYPE.CONFERENCE then
-        serviceType = ROOM_TYPE.CONFERENCE
-    elseif self.floorType == FLOOR_TYPE.BALLROOM then
-        serviceType = ROOM_TYPE.BALLROOM
-    end
-
-    if serviceType then
-        local room = Room(self.floorNumber, 1, serviceType, self.hotelLevel)
-        table.insert(self.rooms, room)
-    end
-end
 
 function Floor:updateRoomPositions()
     if self.floorType == FLOOR_TYPE.LOBBY then
@@ -240,6 +233,74 @@ function Floor:isServiceFloor()
            self.floorType == FLOOR_TYPE.BALLROOM
 end
 
+-- Service floor capacity is half the lobby capacity
+function Floor:getServiceCapacity(lobbyCapacity)
+    return math.floor(lobbyCapacity / 2)
+end
+
+function Floor:canAcceptServiceMonster(lobbyCapacity)
+    if not self:isServiceFloor() then return false end
+    return #self.serviceMonsters < self:getServiceCapacity(lobbyCapacity)
+end
+
+function Floor:addServiceMonster(monster)
+    table.insert(self.serviceMonsters, monster)
+    monster.serviceFloorIndex = #self.serviceMonsters
+    return true
+end
+
+function Floor:removeServiceMonster(monster)
+    for i, m in ipairs(self.serviceMonsters) do
+        if m == monster then
+            table.remove(self.serviceMonsters, i)
+            -- Update indices for remaining monsters
+            for j = i, #self.serviceMonsters do
+                self.serviceMonsters[j].serviceFloorIndex = j
+            end
+            return true
+        end
+    end
+    return false
+end
+
+function Floor:getServiceMonsterCount()
+    return #self.serviceMonsters
+end
+
+function Floor:getServiceMonsters()
+    return self.serviceMonsters
+end
+
+-- Get position for a monster on the service floor
+-- Monsters hang out on the RIGHT side of the floor, away from the elevator
+function Floor:getServiceWaitPosition(index)
+    local y = self.y + FLOOR_HEIGHT - 5
+    local spacing = 4  -- Tight spacing, overlapping is fine
+
+    -- Right side of elevator - start near right edge and pack towards elevator
+    local rightStartX = SCREEN_WIDTH - 40  -- Start near right edge (x=360)
+    local x = rightStartX - (index - 1) * spacing
+
+    -- Clamp to not go past elevator shaft
+    local minX = ELEVATOR_X + ELEVATOR_WIDTH + 10
+    if x < minX then
+        x = minX
+    end
+
+    return x, y
+end
+
+-- Rage out all monsters on this service floor (called at day end)
+function Floor:rageOutServiceMonsters()
+    local monsters = {}
+    for _, monster in ipairs(self.serviceMonsters) do
+        table.insert(monsters, monster)
+    end
+    -- Clear the list (monsters will be handled by caller)
+    self.serviceMonsters = {}
+    return monsters
+end
+
 function Floor:draw()
     -- Apply dithering for fade-in effect on new floors
     if self.fadeAlpha < 1.0 then
@@ -266,9 +327,14 @@ function Floor:draw()
         Floor.elevatorShaft:draw(shaftX, self.y)
     end
 
-    -- Draw rooms
+    -- Draw rooms (guest floors only)
     for _, room in ipairs(self.rooms) do
         room:draw()
+    end
+
+    -- Draw service floor label on left side
+    if self:isServiceFloor() and self.serviceName then
+        self:drawServiceLabel()
     end
 
     -- Draw thick floor divider line at the bottom of the floor
@@ -282,6 +348,59 @@ function Floor:draw()
     end
 end
 
+function Floor:drawServiceLabel()
+    -- Draw a bordered box on the left side with the service floor name
+    local labelText = self.serviceName
+    local typeLabel = ServiceFloorData.getTypeLabel(self.floorType)
+
+    local paddingH = 4
+    local paddingV = 2
+    local lineSpacing = 0
+    local maxBoxWidth = 150
+    local maxTextWidth = maxBoxWidth - paddingH * 2
+
+    -- Use system font (smaller than custom font)
+    local smallFont = gfx.getSystemFont(gfx.font.kVariantNormal)
+    gfx.setFont(smallFont)
+
+    -- Calculate text size and truncate if needed
+    local nameWidth, nameHeight = gfx.getTextSize(labelText)
+    local typeWidth, typeHeight = gfx.getTextSize(typeLabel)
+
+    -- Truncate name with ellipsis if too long
+    if nameWidth > maxTextWidth then
+        while nameWidth > maxTextWidth and #labelText > 3 do
+            labelText = string.sub(labelText, 1, #labelText - 1)
+            nameWidth, nameHeight = gfx.getTextSize(labelText .. "...")
+        end
+        labelText = labelText .. "..."
+        nameWidth, nameHeight = gfx.getTextSize(labelText)
+    end
+
+    -- Box dimensions - capped at max width
+    local boxWidth = math.min(maxBoxWidth, math.max(nameWidth, typeWidth) + paddingH * 2)
+    local boxHeight = nameHeight + typeHeight + paddingV * 2 + lineSpacing
+    local boxX = 4
+    local boxY = self.y + (FLOOR_HEIGHT - boxHeight) / 2
+
+    -- Draw white background with black border
+    gfx.setColor(gfx.kColorWhite)
+    gfx.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 3)
+    gfx.setColor(gfx.kColorBlack)
+    gfx.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 3)
+
+    -- Draw service name
+    gfx.drawText(labelText, boxX + paddingH, boxY + paddingV)
+
+    -- Draw type label below (italic for distinction)
+    local italicFont = gfx.getSystemFont(gfx.font.kVariantItalic)
+    gfx.setFont(italicFont)
+    gfx.drawText(typeLabel, boxX + paddingH, boxY + paddingV + nameHeight + lineSpacing)
+
+    -- Reset to game font
+    Fonts.reset()
+end
+
 function Floor:serialize()
     local roomsData = {}
     for _, room in ipairs(self.rooms) do
@@ -293,12 +412,14 @@ function Floor:serialize()
         hotelLevel = self.hotelLevel,
         floorType = self.floorType,
         y = self.y,
+        serviceName = self.serviceName,
         rooms = roomsData
     }
 end
 
 function Floor:deserialize(data, monsters)
     self.y = data.y
+    self.serviceName = data.serviceName
     self.rooms = {}
 
     for _, roomData in ipairs(data.rooms) do

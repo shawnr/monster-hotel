@@ -96,6 +96,11 @@ function Room:getMonsterIcon()
 end
 
 function Room:draw()
+    -- Service rooms don't draw doors or numbers
+    if self.isService then
+        return
+    end
+
     -- Draw door sprite
     if Room.doorImage then
         Room.doorImage:draw(self.doorX, self.y + 5)

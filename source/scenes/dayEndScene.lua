@@ -77,8 +77,8 @@ end
 function DayEndScene:drawSummaryScreen()
     -- Content box dimensions - leave room at bottom for button
     local boxMargin = 20
-    local boxTop = 15
-    local boxBottom = SCREEN_HEIGHT - 45  -- Leave room for button below
+    local boxTop = 10
+    local boxBottom = SCREEN_HEIGHT - 40  -- Leave room for button below
     local boxHeight = boxBottom - boxTop
 
     -- Draw white content box with border
@@ -90,75 +90,68 @@ function DayEndScene:drawSummaryScreen()
     -- Draw header title centered
     local dayCount = self.hotel and self.hotel.dayCount or 1
     Fonts.set(gfx.font.kVariantBold)
-    local headerY = boxTop + 10
+    local headerY = boxTop + 6
     gfx.drawTextAligned("Day " .. dayCount .. " Complete!", SCREEN_WIDTH / 2, headerY, kTextAlignment.center)
 
     -- Draw separator line
     Fonts.reset()
-    local separatorY = boxTop + 30
+    local separatorY = boxTop + 24
     gfx.drawLine(boxMargin + 12, separatorY, SCREEN_WIDTH - boxMargin - 12, separatorY)
 
-    -- Draw stats with increased margins
-    local y = separatorY + 8
-    local lineHeight = 16
-    local leftX = boxMargin + 20  -- More padding from edge
-    local rightX = SCREEN_WIDTH - boxMargin - 20
+    -- Draw stats with compact layout
+    local y = separatorY + 5
+    local lineHeight = 14  -- Reduced line height
+    local leftX = boxMargin + 15
+    local rightX = SCREEN_WIDTH - boxMargin - 15
 
-    -- Guests checked in (use hotel's daily stats)
+    -- Guest stats in a more compact format
     local checkIns = self.hotel and self.hotel.dailyCheckIns or 0
-    gfx.drawText("Guests Checked In:", leftX, y)
-    gfx.drawTextAligned(tostring(checkIns), rightX, y, kTextAlignment.right)
-    y = y + lineHeight
-
-    -- Guests checked out
     local checkOuts = self.hotel and self.hotel.dailyCheckOuts or 0
-    gfx.drawText("Guests Checked Out:", leftX, y)
-    gfx.drawTextAligned(tostring(checkOuts), rightX, y, kTextAlignment.right)
-    y = y + lineHeight
+    local rages = self.summary.rages or 0
 
-    -- Monsters raged
-    gfx.drawText("Monsters Raged:", leftX, y)
-    gfx.drawTextAligned(tostring(self.summary.rages or 0), rightX, y, kTextAlignment.right)
+    gfx.drawText("Check-ins: " .. checkIns, leftX, y)
+    gfx.drawText("Check-outs: " .. checkOuts, leftX + 120, y)
+    gfx.drawTextAligned("Rages: " .. rages, rightX, y, kTextAlignment.right)
     y = y + lineHeight
 
     -- Separator
-    y = y + 4
+    y = y + 2
     gfx.drawLine(boxMargin + 12, y, SCREEN_WIDTH - boxMargin - 12, y)
-    y = y + 8
+    y = y + 5
 
-    -- Financial summary
+    -- Financial summary header
     Fonts.set(gfx.font.kVariantBold)
     gfx.drawText("Finances", leftX, y)
+    Fonts.reset()
     y = y + lineHeight
 
-    Fonts.reset()
-
     -- Earnings
-    gfx.drawText("  Room Earnings:", leftX, y)
+    gfx.drawText("Room Earnings:", leftX, y)
     gfx.drawTextAligned("+" .. Utils.formatMoney(self.summary.earnings or 0), rightX, y, kTextAlignment.right)
     y = y + lineHeight
 
     -- Operating costs
-    gfx.drawText("  Operating Costs:", leftX, y)
+    gfx.drawText("Operating Costs:", leftX, y)
     gfx.drawTextAligned("-" .. Utils.formatMoney(self.summary.operatingCost or 0), rightX, y, kTextAlignment.right)
     y = y + lineHeight
 
     -- Damage (only show if > 0)
     if (self.summary.damage or 0) > 0 then
-        gfx.drawText("  Rage Damage:", leftX, y)
+        gfx.drawText("Rage Damage:", leftX, y)
         gfx.drawTextAligned("-" .. Utils.formatMoney(self.summary.damage), rightX, y, kTextAlignment.right)
         y = y + lineHeight
     end
 
     -- Net change line
-    gfx.drawLine(leftX, y + 2, rightX, y + 2)
-    y = y + 6
+    y = y + 2
+    gfx.drawLine(leftX, y, rightX, y)
+    y = y + 4
 
     -- Net change
     local netChange = self.summary.net or 0
     local netText = netChange >= 0 and ("+" .. Utils.formatMoney(netChange)) or ("-" .. Utils.formatMoney(math.abs(netChange)))
     Fonts.set(gfx.font.kVariantBold)
-    gfx.drawText("Net Change:", leftX, y)
+    gfx.drawText("Net:", leftX, y)
     gfx.drawTextAligned(netText, rightX, y, kTextAlignment.right)
     y = y + lineHeight
 
@@ -206,31 +199,40 @@ function DayEndScene:drawUnlockScreen()
     Fonts.set(gfx.font.kVariantBold)
     gfx.drawTextAligned("NEW UNLOCK!", SCREEN_WIDTH / 2, headerY, kTextAlignment.center)
 
-    -- Draw unlock info box
-    local infoBoxWidth = 280
-    local infoBoxHeight = 80
+    -- Draw unlock info box (wider to fit challenge text)
+    local infoBoxWidth = 340
+    local infoBoxHeight = 90
     local infoBoxX = (SCREEN_WIDTH - infoBoxWidth) / 2
-    local infoBoxY = boxTop + 45
+    local infoBoxY = boxTop + 40
 
     gfx.setColor(gfx.kColorBlack)
     gfx.drawRoundRect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight, 6)
 
-    -- Draw unlock info
+    -- Draw unlock name
     Fonts.set(gfx.font.kVariantBold)
-    gfx.drawTextAligned(unlock.name or "Unknown", SCREEN_WIDTH / 2, infoBoxY + 15, kTextAlignment.center)
+    gfx.drawTextAligned(unlock.name or "Unknown", SCREEN_WIDTH / 2, infoBoxY + 12, kTextAlignment.center)
 
+    -- Draw challenge description (use 'challenge' field from data)
     Fonts.reset()
-    local description = unlock.description or ""
-    gfx.drawTextAligned(description, SCREEN_WIDTH / 2, infoBoxY + 38, kTextAlignment.center)
+    local challenge = unlock.challenge or ""
+    gfx.drawTextAligned(challenge, SCREEN_WIDTH / 2, infoBoxY + 35, kTextAlignment.center)
 
+    -- Draw effect with nicer formatting
     Fonts.set(gfx.font.kVariantItalic)
-    local effectText = (unlock.type or "Bonus") .. ": +" .. (unlock.effect or "?")
+    local effectType = unlock.type == UNLOCKABLE_TYPE.PATIENCE and "Patience" or "Cost Reduction"
+    local effectValue = unlock.effect or 0
+    local effectText
+    if unlock.type == UNLOCKABLE_TYPE.PATIENCE then
+        effectText = effectType .. ": +" .. effectValue .. " sec"
+    else
+        effectText = effectType .. ": +$" .. effectValue
+    end
     gfx.drawTextAligned(effectText, SCREEN_WIDTH / 2, infoBoxY + 58, kTextAlignment.center)
 
     -- Draw progress indicator
     Fonts.reset()
     local progressText = "Unlock " .. self.currentUnlockIndex .. " of " .. #self.newUnlocks
-    gfx.drawTextAligned(progressText, SCREEN_WIDTH / 2, boxBottom - 15, kTextAlignment.center)
+    gfx.drawTextAligned(progressText, SCREEN_WIDTH / 2, infoBoxY + 75, kTextAlignment.center)
 
     -- Draw button at bottom center
     local promptText = self.currentUnlockIndex < #self.newUnlocks and "A: Next Unlock" or "A: Start Next Day"
