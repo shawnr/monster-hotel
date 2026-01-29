@@ -234,13 +234,13 @@ function Hotel:onLevelUp(oldLevel, newLevel)
     local floorsToAdd = Floor.getFloorsToSpawn(newLevel)
     changes.floorsAdded = floorsToAdd
 
-    -- Shift elevator down by the amount the floors will shift
-    -- This keeps the elevator at the same relative position
+    -- Shift everything down by the amount the new floors push existing content
+    -- This keeps all entities at the same relative position to their floors
     local shiftAmount = floorsToAdd * FLOOR_HEIGHT
     self.elevator.y = self.elevator.y + shiftAmount
 
-    -- Also shift any passengers in the elevator
-    for _, monster in ipairs(self.elevator.passengers) do
+    -- Shift ALL monsters in the hotel (lobby, elevator, floors, service floors)
+    for _, monster in ipairs(self.monsters) do
         monster.y = monster.y + shiftAmount
         monster.targetY = monster.targetY + shiftAmount
     end
@@ -255,6 +255,9 @@ function Hotel:onLevelUp(oldLevel, newLevel)
     end
 
     self:recalculateLayout()
+
+    -- Recalculate elevator's current floor after layout change
+    self.elevator:updateCurrentFloor()
 
     -- Notify callback if set (named differently to avoid shadowing method)
     if self.onLevelUpCallback then

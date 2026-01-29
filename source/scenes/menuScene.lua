@@ -90,8 +90,7 @@ function MenuScene:enter()
         self.selectedIndex = 2
     end
 
-    -- Play menu music (in case returning from gameplay)
-    MusicSystem:playMenuMusic()
+    -- Music plays continuously from init, no action needed
 end
 
 function MenuScene:exit()

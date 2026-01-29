@@ -1,98 +1,79 @@
 -- Monster Hotel - Music System
--- Handles background music playback with single track
+-- Plays two background tracks in alternating loop
 
 MusicSystem = {}
 
--- Single music track (loaded once)
-MusicSystem.track = nil
-
--- Current state
-MusicSystem.isPlaying = false
-MusicSystem.isGameplayMode = false
+MusicSystem.tracks = {}
+MusicSystem.currentTrack = 1
+MusicSystem.started = false
 
 function MusicSystem:init()
-    -- Load the single music track
-    self.track = playdate.sound.fileplayer.new("audio/music/martinis-to-mars")
-    self.isPlaying = false
-    self.isGameplayMode = false
+    -- Load both music tracks
+    self.tracks[1] = playdate.sound.fileplayer.new("audio/music/martinis-to-mars")
+    self.tracks[2] = playdate.sound.fileplayer.new("audio/music/bossa-nova")
+    self.currentTrack = 1
+    self.started = false
 
-    print("MusicSystem initialized - track:", self.track)
+    -- Verify tracks loaded
+    if not self.tracks[1] then
+        print("MusicSystem: failed to load track 1")
+    end
+    if not self.tracks[2] then
+        print("MusicSystem: failed to load track 2")
+    end
+
+    -- Set up finish callbacks for alternating playback
+    if self.tracks[1] then
+        self.tracks[1]:setFinishCallback(function()
+            self:playNextTrack()
+        end)
+    end
+    if self.tracks[2] then
+        self.tracks[2]:setFinishCallback(function()
+            self:playNextTrack()
+        end)
+    end
+
+    -- Start playing the first track
+    self:startPlaying()
 end
 
-function MusicSystem:playMenuMusic()
-    -- If already playing menu music, don't restart
-    if not self.isGameplayMode and self.isPlaying then
-        return
-    end
-
-    -- Stop any current music
-    self:stopAll()
-
-    self.isGameplayMode = false
-
-    -- Menu: loop forever
-    if self.track then
-        self.track:play(0)
-        self.isPlaying = true
-        print("Playing menu music (looping)")
-    end
-end
-
-function MusicSystem:playGameplayMusic()
-    -- If already in gameplay mode with music playing, don't restart
-    if self.isGameplayMode and self.isPlaying then
-        return
-    end
-
-    -- Stop any current music
-    self:stopAll()
-
-    self.isGameplayMode = true
-
-    -- Gameplay: play once then stop
-    if self.track then
-        self.track:play(1)
-        self.isPlaying = true
-        print("Playing gameplay music (once)")
+function MusicSystem:startPlaying()
+    if self.tracks[self.currentTrack] then
+        self.tracks[self.currentTrack]:play(1)  -- Play once, callback will handle next
+        self.started = true
+        print("MusicSystem: playing track " .. self.currentTrack)
     end
 end
 
--- Restart gameplay music (called on level up or new day)
-function MusicSystem:restartGameplayMusic()
-    -- Stop current playback
-    if self.track then
-        self.track:stop()
+function MusicSystem:playNextTrack()
+    -- Switch to the other track
+    if self.currentTrack == 1 then
+        self.currentTrack = 2
+    else
+        self.currentTrack = 1
     end
 
-    self.isGameplayMode = true
-    self.isPlaying = false
-
-    -- Play once
-    if self.track then
-        self.track:play(1)
-        self.isPlaying = true
-        print("Gameplay music restarted (once)")
+    -- Play the next track
+    if self.tracks[self.currentTrack] then
+        self.tracks[self.currentTrack]:play(1)  -- Play once, callback will handle next
+        print("MusicSystem: switched to track " .. self.currentTrack)
     end
 end
 
-function MusicSystem:stopAll()
-    if self.track then
-        self.track:stop()
+-- Safety net: restart if music stopped unexpectedly
+function MusicSystem:ensurePlaying()
+    local anyPlaying = false
+    for i = 1, 2 do
+        if self.tracks[i] and self.tracks[i]:isPlaying() then
+            anyPlaying = true
+            break
+        end
     end
 
-    self.isPlaying = false
-    self.isGameplayMode = false
-end
-
-function MusicSystem:pause()
-    if self.track and self.isPlaying then
-        self.track:pause()
-    end
-end
-
-function MusicSystem:resume()
-    if self.track then
-        self.track:play(0)
+    if not anyPlaying and self.started then
+        print("MusicSystem: restarting playback")
+        self:startPlaying()
     end
 end
 

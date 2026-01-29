@@ -16,8 +16,7 @@ function GameOverScene:enter(options)
     -- Animation
     self.fadeIn = 0
 
-    -- Play menu music
-    MusicSystem:playMenuMusic()
+    -- Music plays continuously from init, no action needed
 
     -- Update lifetime stats
     local gameStats = {

@@ -4,8 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Run Commands
 
+Every build MUST increment the version and buildNumber in `source/pdxinfo`:
+- Increment the patch version (e.g., `0.1.13` → `0.1.14`)
+- Increment the buildNumber (e.g., `14` → `15`)
+
 ```bash
 # Build the game (requires Playdate SDK)
+# 1. First increment version/buildNumber in source/pdxinfo
+# 2. Then build:
 pdc source monster-hotel.pdx
 
 # Clean rebuild (recommended after major changes)

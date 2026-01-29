@@ -64,8 +64,7 @@ function GameScene:enter(options)
         playdate.ui.crankIndicator:start()
     end
 
-    -- Play gameplay music (switches between tracks every 2 minutes)
-    MusicSystem:playGameplayMusic()
+    -- Music plays continuously from init, no action needed
 
     -- Set up hotel callback for level up
     self.hotel.onLevelUpCallback = function(changes)
@@ -643,8 +642,7 @@ function GameScene:onHotelLevelUp(changes)
     self.levelUpInfo = changes
     self.isPaused = true
 
-    -- Restart gameplay music on level up
-    MusicSystem:restartGameplayMusic()
+    -- Music plays continuously, no restart needed
 
     -- Service floor message will be shown when level up notification is dismissed
     -- (see dismissLevelUp)
@@ -921,8 +919,7 @@ function GameScene:startNextDay()
         monster:resetPatience()
     end
 
-    -- Restart gameplay music for new day
-    MusicSystem:restartGameplayMusic()
+    -- Music plays continuously, no restart needed
 
     -- Save at start of new day
     self:saveGame()
